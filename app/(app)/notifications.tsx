@@ -2,7 +2,7 @@ import { useRouter } from "expo-router";
 import { useState } from "react";
 import { View } from "react-native";
 import { Page } from "@/components/madar/shell";
-import { Button, C, Chip, EmptyState, Icon, Loading, T, Tap, confirmAction, type IconName } from "@/components/madar/ui";
+import { Button, C, Chip, EmptyState, Icon, Loading, T, Tap, alpha, confirmAction, type IconName } from "@/components/madar/ui";
 import { fmtRelative } from "@/lib/madar/format";
 import { useNotificationActions, useNotifications } from "@/lib/madar/queries";
 import { useMe } from "@/lib/madar/session";
@@ -77,7 +77,7 @@ export default function NotificationsScreen() {
                   padding: 14,
                   borderTopWidth: i === 0 ? 0 : 1,
                   borderTopColor: C.border,
-                  backgroundColor: pressed ? C.background : n.read_at ? C.surface : C["primary-soft"] + "88",
+                  backgroundColor: pressed ? C.background : n.read_at ? C.surface : alpha(C["primary-soft"], 53),
                 })}
               >
                 <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: k.color + "1A", alignItems: "center", justifyContent: "center" }}>

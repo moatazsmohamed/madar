@@ -364,6 +364,18 @@ export function useCloseMonth() {
   );
 }
 
+/** Takes the current month back to work after an accidental close. */
+export function useReopenMonth() {
+  return useAction(
+    async (monthId: string) => {
+      const { data, error } = await supabase.rpc("reopen_month", { p_month: monthId });
+      if (error) throw error;
+      return data as CompanyMonth;
+    },
+    [["months"], ["days"], ["tasks"], ["task"], ["time-totals"], ["open-session"], ["task-sessions"], ["sessions"], ["activity"]],
+  );
+}
+
 /** Early close of today (company admin). Unfinished work stays archived as late. */
 export function useCloseDay() {
   return useAction(

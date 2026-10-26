@@ -4,7 +4,7 @@ import { View } from "react-native";
 import { ActivityList } from "@/components/madar/activity";
 import { Page } from "@/components/madar/shell";
 import { DueLabel, PriorityPill, TaskForm } from "@/components/madar/tasks";
-import { Avatar, Button, C, Card, EmptyState, Icon, InfoBox, ProgressBar, SectionLabel, T, Tap, useIsWide, type IconName } from "@/components/madar/ui";
+import { Avatar, Button, C, Card, EmptyState, Icon, InfoBox, ProgressBar, SectionLabel, T, Tap, alpha, useIsWide, type IconName } from "@/components/madar/ui";
 import { addDays, fmtHours, fmtMonth, fmtTodayHeading, greeting, isOverdue, sessionMinutes, startOfWeek, todayISO, zonedToUtc } from "@/lib/madar/format";
 import { PROJECT_STATUS_LABELS, ROLE_LABELS } from "@/lib/madar/labels";
 import { canCreateTask, canReviewTask, isAssignee, isLead } from "@/lib/madar/permissions";
@@ -109,7 +109,7 @@ export default function Dashboard() {
       <View style={{ flexDirection: wide ? "row" : "column", gap: 16, alignItems: wide ? "flex-start" : "stretch" }}>
         <View style={{ flex: wide ? 1.5 : undefined, gap: 16 }}>
           {lead && data.review.length ? (
-            <Card style={{ gap: 10, borderColor: C.warning + "55" }}>
+            <Card style={{ gap: 10, borderColor: alpha(C.warning, 33) }}>
               <View style={{ flexDirection: "row", alignItems: "center" }}>
                 <SectionLabel className="flex-1">بانتظار مراجعتك</SectionLabel>
                 <Tap onPress={() => router.push("/tasks?scope=review" as any)}>

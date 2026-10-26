@@ -176,7 +176,7 @@ function LoginForm({ onRegister, onDeveloper }: { onRegister: () => void; onDeve
       <T className="text-center text-[12px] text-muted">نسيت كلمة المرور؟ اطلب من مدير الشركة أو مدير قسمك تعيين كلمة مرور جديدة.</T>
       <View style={{ height: 1, backgroundColor: C.border }} />
       <Pressable onPress={onDeveloper} style={{ alignSelf: "center" }}>
-        <T weight="semibold" style={{ color: C.forest, fontSize: 13 }}>
+        <T weight="semibold" style={{ color: C.primary, fontSize: 13 }}>
           دخول حساب المطور
         </T>
       </Pressable>
@@ -256,7 +256,7 @@ function RegisterForm({ onBack }: { onBack: () => void }) {
               backgroundColor: kind === value ? C.surface : "transparent",
             }}
           >
-            <T weight="semibold" style={{ color: kind === value ? C.forest : C.muted, fontSize: 12.5 }}>
+            <T weight="semibold" style={{ color: kind === value ? C.foreground : C.muted, fontSize: 12.5 }}>
               {label}
             </T>
           </Pressable>

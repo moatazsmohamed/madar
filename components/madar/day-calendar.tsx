@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { View } from "react-native";
 import { addDays, addMonths, daysBetween, fmtMonth, parseISODate, startOfMonth, startOfWeek, todayISO } from "@/lib/madar/format";
 import type { CompanyDay, Task } from "@/lib/madar/types";
-import { Chip, C, Icon, T, Tap, useIsWide } from "./ui";
+import { Chip, C, Icon, T, Tap, alpha, useIsWide } from "./ui";
 
 const WEEKDAYS = ["سبت", "أحد", "اثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة"];
 
@@ -98,7 +98,7 @@ export function DayCalendar({
                       backgroundColor: isToday ? C.primary : "transparent",
                     }}
                   >
-                    <T weight={isToday ? "bold" : "medium"} style={{ fontSize: 12, color: isToday ? "#fff" : inMonth ? C.foreground : C.muted + "88" }}>
+                    <T weight={isToday ? "bold" : "medium"} style={{ fontSize: 12, color: isToday ? "#fff" : inMonth ? C.foreground : alpha(C.muted, 53) }}>
                       {parseISODate(day).getUTCDate()}
                     </T>
                   </View>

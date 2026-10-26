@@ -23,7 +23,7 @@ import {
 import { addDays, endOfMonth, fmtDateTime, fmtDayFull, fmtHours, fmtMonth, isOverdue, todayISO } from "@/lib/madar/format";
 import { PRIORITY_LABELS, PRIORITY_ORDER, STATUS_LABELS, STATUS_ORDER } from "@/lib/madar/labels";
 import { canCreateTask, canReviewTask, isAssignee, isGeneralLead, isLead } from "@/lib/madar/permissions";
-import { useCloseDay, useCloseMonth, useDays, useLookups, useMonths, useTasks } from "@/lib/madar/queries";
+import { useCloseDay, useCloseMonth, useDays, useLookups, useMonths, useReopenMonth, useTasks } from "@/lib/madar/queries";
 import { sortTasks, useMinutesMap, type Sort } from "@/lib/madar/task-utils";
 import { useMe } from "@/lib/madar/session";
 import type { Priority, TaskStatus } from "@/lib/madar/types";
@@ -41,6 +41,7 @@ export default function TasksScreen() {
   const monthsQuery = useMonths();
   const daysQuery = useDays();
   const closeMonth = useCloseMonth();
+  const reopenMonth = useReopenMonth();
   const closeDay = useCloseDay();
   const minutes = useMinutesMap();
   const { profiles, projects, departments } = useLookups();
@@ -106,12 +107,15 @@ export default function TasksScreen() {
   const days = daysQuery.data ?? [];
   const closedDays = useMemo(() => {
     const set = new Set<string>();
+    const status = new Map<string, string>();
     (daysQuery.data ?? []).forEach((d) => {
+      status.set(d.day, d.status);
       if (d.status === "closed") set.add(d.day);
     });
-    // The database closes any past day even before the sync call lands.
+    // The database closes any past day even before the sync call lands, but a day
+    // reopened with its month counts by its row again.
     monthTasks.forEach((t) => {
-      if (t.day < today) set.add(t.day);
+      if (t.day < today && status.get(t.day) !== "open") set.add(t.day);
     });
     return set;
   }, [daysQuery.data, monthTasks, today]);
@@ -119,6 +123,7 @@ export default function TasksScreen() {
   const canCloseToday = companyAdmin && selectedMonth?.status === "open" && monthIsCurrent && todayRow?.status === "open";
   const monthLastDay = selectedMonth ? endOfMonth(selectedMonth.period) : null;
   const canCloseMonth = companyAdmin && selectedMonth?.status === "open" && monthLastDay === today;
+  const canReopenMonth = companyAdmin && selectedMonth?.status === "closed" && monthIsCurrent;
 
   /** New tasks land on the selected day, or the first open day from today. */
   const defaultDay = useMemo(() => {
@@ -164,6 +169,15 @@ export default function TasksScreen() {
     });
   };
 
+  const reopenSelectedMonth = async () => {
+    if (!selectedMonth || !canReopenMonth) return;
+    if (!(await confirmAction(`إعادة فتح ${fmtMonth(selectedMonth.period)}؟ سيعود للتعديل، وستُفتح الأيام التي أُغلقت مع الشهر.`, "إعادة فتح الشهر"))) return;
+    reopenMonth.mutate(selectedMonth.id, {
+      onSuccess: () => toast.show("أُعيد فتح الشهر ويمكن تعديل مهامه من جديد"),
+      onError: (e) => toast.show(errorMessage(e), "error"),
+    });
+  };
+
   const closeToday = async () => {
     if (!(await confirmAction(`إغلاق يوم ${fmtDayFull(today)}؟ ستُغلق مهام اليوم ويتوقف تسجيل الوقت عليه، وتبقى بياناته محفوظة للعرض.`, "إغلاق اليوم"))) return;
     closeDay.mutate(today, {
@@ -190,6 +204,9 @@ export default function TasksScreen() {
       actions={
         <>
           {canCreate ? <Button title="مهمة جديدة" icon="plus" onPress={() => setCreating(true)} /> : null}
+          {canReopenMonth ? (
+            <Button title="إعادة فتح الشهر" icon="rotate-ccw" variant="secondary" onPress={reopenSelectedMonth} loading={reopenMonth.isPending} />
+          ) : null}
           {canCloseToday ? (
             <Button title="إغلاق اليوم" icon="lock" variant="secondary" onPress={closeToday} loading={closeDay.isPending} />
           ) : null}
@@ -234,7 +251,9 @@ export default function TasksScreen() {
           <T className="text-[12px] text-muted">
             {selectedMonth.status === "open"
               ? "كل يوم يُغلق تلقائيًا في منتصف الليل بتوقيت الشركة (أو يدويًا من مدير الشركة)، ويُفتح يوم جديد. المهام غير المنتهية تبقى مؤرشفة كمتأخرة."
-              : `شهر مؤرشف — أُغلق ${fmtDateTime(selectedMonth.closed_at)}. كل بياناته محفوظة للعرض فقط.`}
+              : monthIsCurrent
+                ? `شهر مؤرشف — أُغلق ${fmtDateTime(selectedMonth.closed_at)}. يمكن لمدير الشركة إعادة فتحه للتعديل.`
+                : `شهر مؤرشف — أُغلق ${fmtDateTime(selectedMonth.closed_at)}. الأشهر السابقة تبقى للعرض فقط.`}
           </T>
         ) : null}
         {companyAdmin && selectedMonth?.status === "open" && !canCloseMonth && monthLastDay ? (

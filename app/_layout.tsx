@@ -18,7 +18,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import "@/lib/_core/nativewind-pressable";
 import { C, ToastProvider } from "@/components/madar/ui";
 import { SessionProvider } from "@/lib/madar/session";
-import { ThemeProvider } from "@/lib/theme-provider";
+import { ThemeProvider, useThemeContext } from "@/lib/theme-provider";
 
 // Arabic-first layout: force right-to-left on native (applies after the first reload).
 if (Platform.OS !== "web" && !I18nManager.isRTL) {
@@ -27,6 +27,11 @@ if (Platform.OS !== "web" && !I18nManager.isRTL) {
 }
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
+
+function ThemedStatusBar() {
+  const { colorScheme } = useThemeContext();
+  return <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />;
+}
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
@@ -73,7 +78,7 @@ export default function RootLayout() {
                   <Stack.Screen name="login" />
                   <Stack.Screen name="(app)" />
                 </Stack>
-                <StatusBar style="dark" />
+                <ThemedStatusBar />
               </ToastProvider>
             </SessionProvider>
           </QueryClientProvider>

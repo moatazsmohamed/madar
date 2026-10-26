@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { View } from "react-native";
 import { AddMemberSheet, ApproveSheet } from "@/components/madar/member-forms";
 import { Page } from "@/components/madar/shell";
-import { Avatar, Button, C, Card, Chip, EmptyState, IconButton, Input, Loading, Pill, SearchInput, SectionLabel, T, Tap, confirmAction, useIsWide, useToast } from "@/components/madar/ui";
+import { Avatar, Button, C, Card, Chip, EmptyState, IconButton, Input, Loading, Pill, SearchInput, SectionLabel, T, Tap, alpha, confirmAction, useIsWide, useToast } from "@/components/madar/ui";
 import { fmtRelative, isOverdue } from "@/lib/madar/format";
 import { MEMBER_STATUS_LABELS, ROLE_LABELS, ROLE_ORDER } from "@/lib/madar/labels";
 import { copyText, joinUrl } from "@/lib/madar/links";
@@ -56,7 +56,7 @@ export default function TeamScreen() {
       actions={canManageMembers(me) ? <Button title="إضافة موظف" icon="user-plus" onPress={() => setAdding(true)} /> : null}
     >
       {admin && pending.length ? (
-        <Card style={{ gap: 10, marginBottom: 16, borderColor: C.warning + "66", backgroundColor: C["warning-soft"] }}>
+        <Card style={{ gap: 10, marginBottom: 16, borderColor: alpha(C.warning, 40), backgroundColor: C["warning-soft"] }}>
           <SectionLabel>طلبات الانضمام · {pending.length}</SectionLabel>
           {pending.map((p) => (
             <View key={p.id} style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.surface, borderRadius: 14, padding: 10, flexWrap: "wrap" }}>

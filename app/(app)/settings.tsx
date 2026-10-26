@@ -4,13 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import { Platform, View } from "react-native";
 import { EditMemberSheet } from "@/components/madar/member-forms";
 import { Page } from "@/components/madar/shell";
-import { Avatar, Button, C, Card, ErrorBox, Field, InfoBox, Input, SectionLabel, Select, T, useIsWide, useToast } from "@/components/madar/ui";
+import { Avatar, Button, C, Card, ErrorBox, Field, InfoBox, Input, SectionLabel, Segmented, Select, T, useIsWide, useToast } from "@/components/madar/ui";
 import { exportCSV, parseCSV, toCSV } from "@/lib/madar/csv";
 import { addDays, todayISO } from "@/lib/madar/format";
 import { PRIORITY_LABELS, ROLE_HINTS, ROLE_LABELS, TIMEZONES } from "@/lib/madar/labels";
 import { canCreateTask, isAdmin } from "@/lib/madar/permissions";
 import { useImportTasks, useLookups, useSaveSettings } from "@/lib/madar/queries";
 import { useMe, useSession } from "@/lib/madar/session";
+import { useThemeContext } from "@/lib/theme-provider";
 import type { Priority, TaskInput } from "@/lib/madar/types";
 import { errorMessage, supabase } from "@/lib/supabase";
 
@@ -22,6 +23,7 @@ export default function SettingsScreen() {
       <View style={{ flexDirection: wide ? "row" : "column", gap: 16, alignItems: wide ? "flex-start" : "stretch" }}>
         <View style={{ flex: wide ? 1 : undefined, gap: 16 }}>
           <AccountCard />
+          <AppearanceCard />
           <PasswordCard />
         </View>
         <View style={{ flex: wide ? 1 : undefined, gap: 16 }}>
@@ -63,6 +65,27 @@ function AccountCard() {
         <Button title="تسجيل الخروج" icon="log-out" variant="danger" size="sm" onPress={signOut} />
       </View>
       <EditMemberSheet visible={editing} onClose={() => setEditing(false)} member={me} />
+    </Card>
+  );
+}
+
+function AppearanceCard() {
+  const { preference, setPreference } = useThemeContext();
+  return (
+    <Card style={{ gap: 12 }}>
+      <SectionLabel>المظهر</SectionLabel>
+      <Segmented
+        value={preference}
+        onChange={setPreference}
+        options={[
+          { value: "auto", label: "تلقائي", icon: "clock" },
+          { value: "light", label: "فاتح", icon: "sun" },
+          { value: "dark", label: "ليلي", icon: "moon" },
+        ]}
+      />
+      <T className="text-[12.5px] text-muted" style={{ lineHeight: 21 }}>
+        الوضع التلقائي يشغّل الوضع الليلي أول ما الساعة توصل 4 عصرًا بتوقيت القاهرة، ويرجع فاتح الساعة 6 صباحًا.
+      </T>
     </Card>
   );
 }

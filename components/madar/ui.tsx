@@ -22,7 +22,28 @@ import { cn } from "@/lib/utils";
 import { initials } from "@/lib/madar/format";
 import type { Tone } from "@/lib/madar/labels";
 
-export const C = SchemeColors.light;
+const LIGHT = SchemeColors.light;
+
+/**
+ * On web every token resolves through the CSS variable that ThemeProvider swaps
+ * between the light and dark palettes, so a scheme change repaints instantly.
+ * Native keeps the light hex values (night mode is a web feature).
+ */
+export const C: typeof LIGHT =
+  Platform.OS === "web"
+    ? (Object.fromEntries(
+        Object.entries(LIGHT).map(([token, value]) => [token, `var(--color-${token}, ${value})`]),
+      ) as typeof LIGHT)
+    : LIGHT;
+
+/** Translucent accent from a palette token, safe for both hex values and CSS variables. */
+export function alpha(color: string, percent: number) {
+  if (color.includes("var(")) return `color-mix(in srgb, ${color} ${Math.round(percent)}%, transparent)`;
+  const suffix = Math.round((percent / 100) * 255)
+    .toString(16)
+    .padStart(2, "0");
+  return color + suffix;
+}
 
 export const FONTS = {
   regular: "Cairo_400Regular",
@@ -456,7 +477,7 @@ export function Input({ style, multiline, ...props }: TextInputProps) {
   const [focused, setFocused] = useState(false);
   return (
     <TextInput
-      placeholderTextColor={C.muted + "AA"}
+      placeholderTextColor={alpha(C.muted, 67)}
       {...props}
       multiline={multiline}
       onFocus={(e) => {
@@ -739,7 +760,7 @@ export function Select<V extends string>({
         style={{ ...inputBase, flexDirection: "row", alignItems: "center", gap: 8, opacity: disabled ? 0.6 : 1 }}
       >
         {selected?.color ? <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: selected.color }} /> : null}
-        <T style={{ flex: 1, color: selected ? C.foreground : C.muted + "AA" }} numberOfLines={1}>
+        <T style={{ flex: 1, color: selected ? C.foreground : alpha(C.muted, 67) }} numberOfLines={1}>
           {selected ? selected.label : value === null && noneLabel ? noneLabel : placeholder}
         </T>
         {!disabled ? <Icon name="chevron-down" size={16} color={C.muted} /> : null}
@@ -842,7 +863,7 @@ export function MultiSelect({
       <Pressable onPress={() => setOpen(true)} style={{ ...inputBase, flexDirection: "row", alignItems: "center", gap: 8 }}>
         <View style={{ flex: 1 }}>
           {selected.length === 0 ? (
-            <T style={{ color: C.muted + "AA" }}>{placeholder}</T>
+            <T style={{ color: alpha(C.muted, 67) }}>{placeholder}</T>
           ) : renderValue ? (
             renderValue(selected)
           ) : (

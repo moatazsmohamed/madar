@@ -18,7 +18,7 @@ import { STATUS_LABELS, STATUS_ORDER, STATUS_TONE } from "@/lib/madar/labels";
 import { useLookups } from "@/lib/madar/queries";
 import type { Task } from "@/lib/madar/types";
 import { Assignees, DayLabel, DueLabel, FinishButton, PriorityPill, StatusMenu } from "./tasks";
-import { C, EmptyState, Icon, IconButton, T, Tap, toneColor, useIsWide, insetStart } from "./ui";
+import { C, EmptyState, Icon, IconButton, T, Tap, alpha, toneColor, useIsWide, insetStart } from "./ui";
 
 type ViewProps = { tasks: Task[]; minutes: Map<string, number>; empty?: React.ReactNode; closedDays?: Set<string> };
 
@@ -138,7 +138,7 @@ export function TaskCard({ task, minutes, onPress, compact, dayClosed }: { task:
         backgroundColor: C.surface,
         borderRadius: 16,
         borderWidth: 1,
-        borderColor: overdue ? C.error + "55" : C.border,
+        borderColor: overdue ? alpha(C.error, 33) : C.border,
         padding: 14,
         gap: 10,
       }}
@@ -298,7 +298,7 @@ export function TaskCalendar({ tasks, minutes, closedDays }: ViewProps) {
                       backgroundColor: isToday ? C.primary : "transparent",
                     }}
                   >
-                    <T weight={isToday ? "bold" : "medium"} style={{ fontSize: 12, color: isToday ? "#fff" : inMonth ? C.foreground : C.muted + "99" }}>
+                    <T weight={isToday ? "bold" : "medium"} style={{ fontSize: 12, color: isToday ? "#fff" : inMonth ? C.foreground : alpha(C.muted, 60) }}>
                       {parseISODate(day).getUTCDate()}
                     </T>
                   </View>
@@ -419,7 +419,7 @@ export function TaskTimeline({ tasks }: ViewProps) {
                 </View>
                 <View style={{ flex: 1, justifyContent: "center", position: "relative" }}>
                   {todayOffset >= 0 && todayOffset < span ? (
-                    <View style={{ position: "absolute", top: 0, bottom: 0, ...insetStart(`${((todayOffset + 0.5) / span) * 100}%`), width: 1.5, backgroundColor: C.warning + "88" }} />
+                    <View style={{ position: "absolute", top: 0, bottom: 0, ...insetStart(`${((todayOffset + 0.5) / span) * 100}%`), width: 1.5, backgroundColor: alpha(C.warning, 53) }} />
                   ) : null}
                   <View
                     style={{
