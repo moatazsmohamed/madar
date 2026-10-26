@@ -64,7 +64,7 @@ export default function AppLayout() {
 
   return (
     <AppShell>
-      <Stack screenOptions={{ headerShown: false, animation: "fade", contentStyle: { backgroundColor: C.background } }} />
+      <Stack screenOptions={{ headerShown: false, animation: "fade", contentStyle: { backgroundColor: "transparent" } }} />
     </AppShell>
   );
 }
