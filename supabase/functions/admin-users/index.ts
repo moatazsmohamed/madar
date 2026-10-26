@@ -87,7 +87,7 @@ Deno.serve(async (req: Request) => {
     if (!passwordOk(body.password)) return fail("كلمة المرور يجب أن تكون 8 أحرف على الأقل");
     const fullName = text(body.full_name, 120);
     if (!fullName) return fail("أدخل اسمك");
-    const joinCode = text(body.join_code, 64).toLowerCase();
+    const joinCode = text(body.join_code, 64).toLowerCase().replace(/[^0-9a-f]/g, "");
     const companyName = text(body.company_name, 120);
     const jobTitle = text(body.job_title, 120) || null;
     if (!joinCode && !companyName) return fail("أدخل كود الشركة أو الاسم من رابط الدعوة");

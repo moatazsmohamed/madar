@@ -10,7 +10,8 @@ import { callAccounts, errorMessage, supabase } from "@/lib/supabase";
 
 export default function JoinScreen() {
   const params = useLocalSearchParams<{ code?: string }>();
-  const code = (Array.isArray(params.code) ? params.code[0] : params.code ?? "").trim().toLowerCase();
+  // Pasted links often carry RTL marks or stray characters around the code.
+  const code = (Array.isArray(params.code) ? params.code[0] : params.code ?? "").replace(/[^0-9a-f]/gi, "").toLowerCase();
   const router = useRouter();
   const wide = useIsWide(860);
   const insets = useSafeAreaInsets();
