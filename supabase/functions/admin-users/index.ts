@@ -114,6 +114,40 @@ Deno.serve(async (req: Request) => {
     return reply(200, { ok: true, status: profile?.status ?? "pending" });
   }
 
+  if (action === "register_company") {
+    if (!emailOk(body.email)) return fail("أدخل بريدًا إلكترونيًا صحيحًا");
+    if (!passwordOk(body.password)) return fail("كلمة المرور يجب أن تكون 8 أحرف على الأقل");
+    const fullName = text(body.full_name, 120);
+    if (!fullName) return fail("أدخل اسمك");
+    const companyName = text(body.company_name, 120);
+    if (!companyName) return fail("أدخل اسم الشركة");
+    const timezone = text(body.timezone, 64) || "Africa/Cairo";
+    if (!(await hasDeveloper())) return fail("لم يتم إعداد حساب المطور بعد", 409);
+
+    const { data: company, error: companyError } = await admin
+      .from("companies")
+      .insert({ name: companyName, timezone, status: "pending" })
+      .select("id")
+      .single();
+    if (companyError || !company) {
+      if (companyError?.code === "23505") return fail("اسم الشركة مستخدم بالفعل أو هناك طلب سابق لها", 409);
+      return fail("تعذّر إرسال الطلب", 500);
+    }
+
+    const email = body.email.trim().toLowerCase();
+    const { data, error } = await admin.auth.admin.createUser({
+      email,
+      password: body.password,
+      email_confirm: true,
+      user_metadata: { full_name: fullName, company_id: company.id, role: "admin", status: "pending" },
+    });
+    if (error || !data.user) {
+      await admin.from("companies").delete().eq("id", company.id);
+      return fail(friendlyAuthError(error?.message ?? ""));
+    }
+    return reply(200, { ok: true, company_id: company.id });
+  }
+
   // ---------- authenticated actions ----------
   const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
   if (!token) return fail("سجّل الدخول أولًا", 401);
@@ -164,6 +198,49 @@ Deno.serve(async (req: Request) => {
       return fail(friendlyAuthError(error?.message ?? ""));
     }
     return reply(200, { ok: true, company_id: company.id, user_id: data.user.id });
+  }
+
+  if (action === "review_company") {
+    if (myRole !== "developer") return fail("مراجعة الطلبات من صلاحيات حساب المطور", 403);
+    const companyId = typeof body.company_id === "string" ? body.company_id : "";
+    const decision = body.decision === "approve" || body.decision === "reject" ? body.decision : null;
+    if (!companyId || !decision) return fail("حدّد الشركة والقرار");
+    const { data: company } = await admin
+      .from("companies")
+      .select("id, name, status")
+      .eq("id", companyId)
+      .single();
+    if (!company) return fail("الشركة غير موجودة", 404);
+    if (company.status !== "pending") return fail("هذه الشركة ليست بانتظار الموافقة", 409);
+
+    const { data: owners } = await admin
+      .from("profiles")
+      .select("id, full_name")
+      .eq("company_id", companyId)
+      .eq("role", "admin")
+      .eq("status", "pending");
+
+    if (decision === "approve") {
+      await admin.from("companies").update({ status: "active" }).eq("id", companyId);
+      const ids = (owners ?? []).map((o) => o.id);
+      if (ids.length) {
+        await admin.from("profiles").update({ status: "active" }).in("id", ids);
+        await admin.from("notifications").insert(
+          ids.map((userId) => ({
+            user_id: userId,
+            kind: "member_approved",
+            title: "تم تفعيل شركتك",
+            body: `تمت الموافقة على فتح شركة ${company.name}. يمكنك الدخول وإدارة شركتك الآن.`,
+          })),
+        );
+      }
+      return reply(200, { ok: true });
+    }
+
+    for (const owner of owners ?? []) await admin.auth.admin.deleteUser(owner.id);
+    const { error: deleteError } = await admin.from("companies").delete().eq("id", companyId);
+    if (deleteError) return fail("تعذّر حذف الطلب", 500);
+    return reply(200, { ok: true });
   }
 
   if (action === "create_member") {

@@ -8,7 +8,7 @@ export interface Company {
   id: string;
   name: string;
   timezone: string;
-  status: "active" | "suspended";
+  status: "active" | "suspended" | "pending";
   created_at: string;
   updated_at: string;
 }

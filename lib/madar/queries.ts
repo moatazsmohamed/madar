@@ -551,6 +551,14 @@ export function useCreateCompany() {
   );
 }
 
+export function useReviewCompany() {
+  return useAction(
+    async (vars: { company_id: string; decision: "approve" | "reject" }) =>
+      callAccounts({ action: "review_company", ...vars }),
+    [["companies"], ["profiles"]],
+  );
+}
+
 export function useNotificationActions() {
   const keys: QueryKey[] = [["notifications"]];
   const markRead = useAction(async (id: string) => {

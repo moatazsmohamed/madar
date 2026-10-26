@@ -20,7 +20,7 @@ import {
 } from "@/components/madar/ui";
 import { fmtRelative } from "@/lib/madar/format";
 import { TIMEZONES } from "@/lib/madar/labels";
-import { useCompanies, useCreateCompany, useProfiles } from "@/lib/madar/queries";
+import { useCompanies, useCreateCompany, useProfiles, useReviewCompany } from "@/lib/madar/queries";
 import { useSession } from "@/lib/madar/session";
 import { errorMessage } from "@/lib/supabase";
 
@@ -30,6 +30,7 @@ export default function CompaniesScreen() {
   const companies = useCompanies(isDeveloper);
   const profiles = useProfiles();
   const create = useCreateCompany();
+  const review = useReviewCompany();
   const toast = useToast();
 
   const [name, setName] = useState("");
@@ -38,6 +39,7 @@ export default function CompaniesScreen() {
   const [adminEmail, setAdminEmail] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [confirmReject, setConfirmReject] = useState<string | null>(null);
 
   const adminsByCompany = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -82,20 +84,84 @@ export default function CompaniesScreen() {
   };
 
   const list = companies.data ?? [];
+  const pending = list.filter((c) => c.status === "pending");
+  const approved = list.filter((c) => c.status !== "pending");
+
+  const decide = (companyId: string, decision: "approve" | "reject") => {
+    review.mutate(
+      { company_id: companyId, decision },
+      {
+        onSuccess: () => {
+          setConfirmReject(null);
+          toast.show(decision === "approve" ? "تمت الموافقة على الشركة وتفعيل حساب مديرها" : "تم رفض الطلب وحذفه");
+        },
+        onError: (e) => toast.show(errorMessage(e), "error"),
+      },
+    );
+  };
 
   return (
-    <Page title="الشركات" subtitle="حساب المطور: أضف الشركات وافتح لكل شركة نظامها الكامل بمدير خاص بها.">
+    <Page title="الشركات" subtitle="حساب المطور: راجع طلبات فتح الشركات، وأضف الشركات وافتح لكل شركة نظامها الكامل بمدير خاص بها.">
       <View style={{ flexDirection: wide ? "row" : "column", gap: 16, alignItems: wide ? "flex-start" : "stretch" }}>
         <View style={{ flex: wide ? 1.1 : undefined, gap: 12 }}>
-          <SectionLabel>الشركات المسجّلة {list.length ? `(${list.length})` : ""}</SectionLabel>
+          {pending.length ? (
+            <>
+              <SectionLabel>طلبات فتح شركات ({pending.length})</SectionLabel>
+              {pending.map((company) => {
+                const admins = adminsByCompany.get(company.id) ?? [];
+                return (
+                  <Card key={company.id} style={{ gap: 10, borderColor: C.warning }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <T weight="bold" style={{ fontSize: 16.5, lineHeight: 26, flex: 1 }}>
+                        {company.name}
+                      </T>
+                      <Pill label="بانتظار الموافقة" tone="warning" dot />
+                    </View>
+                    <T className="text-[12.5px] text-muted">
+                      {admins.length ? `صاحب الطلب: ${admins.join("، ")}` : "صاحب الطلب غير محدد"}
+                      {" · "}
+                      {TIMEZONES.find((t) => t.value === company.timezone)?.label ?? company.timezone}
+                    </T>
+                    <T className="text-[12px] text-muted">أُرسل {fmtRelative(company.created_at)}</T>
+                    {confirmReject === company.id ? (
+                      <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+                        <Button
+                          title="تأكيد الرفض"
+                          icon="trash-2"
+                          variant="danger"
+                          size="sm"
+                          loading={review.isPending}
+                          onPress={() => decide(company.id, "reject")}
+                        />
+                        <Button title="إلغاء" variant="ghost" size="sm" onPress={() => setConfirmReject(null)} />
+                      </View>
+                    ) : (
+                      <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+                        <Button
+                          title="موافقة وتفعيل"
+                          icon="check"
+                          size="sm"
+                          loading={review.isPending}
+                          onPress={() => decide(company.id, "approve")}
+                        />
+                        <Button title="رفض" variant="danger" size="sm" onPress={() => setConfirmReject(company.id)} />
+                      </View>
+                    )}
+                  </Card>
+                );
+              })}
+              <View style={{ height: 6 }} />
+            </>
+          ) : null}
+          <SectionLabel>الشركات المسجّلة {approved.length ? `(${approved.length})` : ""}</SectionLabel>
           {companies.isLoading ? (
             <Card>
               <T className="text-muted">جارِ التحميل…</T>
             </Card>
-          ) : list.length === 0 ? (
-            <EmptyState icon="layers" title="لا توجد شركات بعد" hint="أضف أول شركة من النموذج المجاور، وسيُنشأ لها حساب مدير نظام." />
+          ) : approved.length === 0 ? (
+            <EmptyState icon="layers" title="لا توجد شركات بعد" hint="ستظهر طلبات العملاء هنا للموافقة، أو أضف شركة مباشرة من النموذج المجاور." />
           ) : (
-            list.map((company) => {
+            approved.map((company) => {
               const admins = adminsByCompany.get(company.id) ?? [];
               return (
                 <Card key={company.id} style={{ gap: 8 }}>
@@ -122,8 +188,8 @@ export default function CompaniesScreen() {
         </View>
 
         <Card style={{ flex: wide ? 1 : undefined, gap: 12 }}>
-          <SectionLabel>إضافة شركة</SectionLabel>
-          <InfoBox>عند الإنشاء يتكوّن حساب مدير نظام للشركة، ويسجّل الدخول به ليضيف الأقسام والموظفين ويبدأ العمل.</InfoBox>
+          <SectionLabel>إضافة شركة مباشرة</SectionLabel>
+          <InfoBox>تتجاوز هذه الطريقة انتظار الموافقة: عند الإنشاء يتكوّن حساب مدير نظام للشركة، ويسجّل الدخول به ليضيف الأقسام والموظفين.</InfoBox>
           <Field label="اسم الشركة" required>
             <Input value={name} onChangeText={setName} placeholder="مثال: شركة النور للتجارة" />
           </Field>

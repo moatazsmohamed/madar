@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { Redirect } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LogoMark, OrbitDecor, Wordmark } from "@/components/madar/logo";
-import { Button, C, ErrorBox, Field, InfoBox, Input, Loading, T, useIsWide } from "@/components/madar/ui";
+import { Button, C, ErrorBox, Field, InfoBox, Input, Loading, Select, T, useIsWide } from "@/components/madar/ui";
+import { TIMEZONES } from "@/lib/madar/labels";
 import { useSession } from "@/lib/madar/session";
 import { callAccounts, errorMessage, supabase } from "@/lib/supabase";
 
@@ -12,6 +13,7 @@ type Mode = "login" | "register" | "setup";
 
 export default function LoginScreen() {
   const { ready, session, profile } = useSession();
+  const router = useRouter();
   const wide = useIsWide(860);
   const insets = useSafeAreaInsets();
   const status = useQuery({
@@ -45,7 +47,7 @@ export default function LoginScreen() {
       ) : mode === "register" ? (
         <RegisterForm onBack={() => setMode("login")} />
       ) : (
-        <LoginForm onRegister={() => setMode("register")} />
+        <LoginForm onRegister={() => setMode("register")} onDeveloper={() => router.push("/developer")} />
       )}
       {status.error ? <ErrorBox message={errorMessage(status.error)} /> : null}
     </View>
@@ -134,7 +136,7 @@ function PasswordInput({ value, onChangeText, placeholder, onSubmit }: { value: 
   );
 }
 
-function LoginForm({ onRegister }: { onRegister: () => void }) {
+function LoginForm({ onRegister, onDeveloper }: { onRegister: () => void; onDeveloper: () => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -172,12 +174,20 @@ function LoginForm({ onRegister }: { onRegister: () => void }) {
         </Pressable>
       </View>
       <T className="text-center text-[12px] text-muted">نسيت كلمة المرور؟ اطلب من مدير النظام أو مدير قسمك تعيين كلمة مرور جديدة.</T>
+      <View style={{ height: 1, backgroundColor: C.border }} />
+      <Pressable onPress={onDeveloper} style={{ alignSelf: "center" }}>
+        <T weight="semibold" style={{ color: C.forest, fontSize: 13 }}>
+          دخول حساب المطور
+        </T>
+      </Pressable>
     </>
   );
 }
 
 function RegisterForm({ onBack }: { onBack: () => void }) {
+  const [kind, setKind] = useState<"company" | "join">("company");
   const [company, setCompany] = useState("");
+  const [timezone, setTimezone] = useState("Africa/Cairo");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -193,13 +203,24 @@ function RegisterForm({ onBack }: { onBack: () => void }) {
     setBusy(true);
     try {
       const normalized = email.trim().toLowerCase();
-      await callAccounts({
-        action: "register",
-        email: normalized,
-        password,
-        full_name: name.trim(),
-        company_name: company.trim(),
-      });
+      await callAccounts(
+        kind === "company"
+          ? {
+              action: "register_company",
+              email: normalized,
+              password,
+              full_name: name.trim(),
+              company_name: company.trim(),
+              timezone,
+            }
+          : {
+              action: "register",
+              email: normalized,
+              password,
+              full_name: name.trim(),
+              company_name: company.trim(),
+            },
+      );
       const { error: err } = await supabase.auth.signInWithPassword({ email: normalized, password });
       if (err) throw err;
     } catch (e) {
@@ -211,11 +232,56 @@ function RegisterForm({ onBack }: { onBack: () => void }) {
 
   return (
     <>
-      <Heading title="طلب الانضمام" subtitle="انضم إلى شركتك في مدار" />
-      <InfoBox>إذا أضافك مدير الشركة مسبقًا بهذا البريد سيُفعّل حسابك فورًا، وإلا سيبقى بانتظار موافقة مدير النظام.</InfoBox>
+      <Heading title={kind === "company" ? "تسجيل شركة جديدة" : "طلب الانضمام"} subtitle={kind === "company" ? "افتح مساحة شركتك في مدار" : "انضم إلى شركتك في مدار"} />
+      <View style={{ flexDirection: "row", backgroundColor: C.sand, borderRadius: 12, padding: 3, gap: 3 }}>
+        {(
+          [
+            ["company", "شركة جديدة"],
+            ["join", "انضمام لشركة"],
+          ] as const
+        ).map(([value, label]) => (
+          <Pressable
+            key={value}
+            onPress={() => {
+              setKind(value);
+              setError(null);
+            }}
+            style={{
+              flex: 1,
+              paddingVertical: 9,
+              borderRadius: 10,
+              alignItems: "center",
+              backgroundColor: kind === value ? C.surface : "transparent",
+            }}
+          >
+            <T weight="semibold" style={{ color: kind === value ? C.forest : C.muted, fontSize: 12.5 }}>
+              {label}
+            </T>
+          </Pressable>
+        ))}
+      </View>
+      <InfoBox>
+        {kind === "company"
+          ? "أرسل بيانات شركتك، ويصل الطلب إلى حساب المطور للموافقة. بعد الموافقة تُنشأ الشركة وتدخلها كمدير نظام لها."
+          : "إذا أضافك مدير الشركة مسبقًا بهذا البريد سيُفعّل حسابك فورًا، وإلا سيبقى بانتظار موافقة مدير النظام."}
+      </InfoBox>
       <Field label="اسم الشركة" required>
-        <Input value={company} onChangeText={setCompany} placeholder="اكتب اسم الشركة كما سجّله مديرها" />
+        <Input
+          value={company}
+          onChangeText={setCompany}
+          placeholder={kind === "company" ? "مثال: شركة النور للتجارة" : "اكتب اسم الشركة كما سجّله مديرها"}
+        />
       </Field>
+      {kind === "company" ? (
+        <Field label="المنطقة الزمنية" hint="تُعرض كل الأوقات والتقارير وفق هذا التوقيت.">
+          <Select
+            value={timezone}
+            onChange={(v) => setTimezone(v ?? "Africa/Cairo")}
+            options={TIMEZONES.map((t) => ({ value: t.value, label: t.label, hint: t.value }))}
+            title="المنطقة الزمنية"
+          />
+        </Field>
+      ) : null}
       <Field label="الاسم الكامل" required>
         <Input value={name} onChangeText={setName} placeholder="مثال: سارة أحمد" />
       </Field>
@@ -226,7 +292,7 @@ function RegisterForm({ onBack }: { onBack: () => void }) {
         <PasswordInput value={password} onChangeText={setPassword} onSubmit={submit} />
       </Field>
       <ErrorBox message={error} />
-      <Button title="إرسال الطلب" size="lg" onPress={submit} loading={busy} full />
+      <Button title={kind === "company" ? "إرسال طلب فتح الشركة" : "إرسال الطلب"} size="lg" onPress={submit} loading={busy} full />
       <Pressable onPress={onBack} style={{ alignSelf: "center" }}>
         <T weight="bold" style={{ color: C.primary }}>
           لديّ حساب، تسجيل الدخول

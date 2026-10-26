@@ -25,7 +25,7 @@ export default function AppLayout() {
           <T style={{ color: "#C9D6CF", lineHeight: 24 }}>
             {disabled
               ? "تواصل مع مدير النظام في شركتك لإعادة تفعيل الحساب."
-              : `سجّلت باسم ${profile?.full_name ?? ""}. سيصلك الوصول إلى مساحة العمل فور موافقة مدير النظام، ويمكنك تحديث هذه الصفحة للتحقق.`}
+              : `سجّلت باسم ${profile?.full_name ?? ""}. سيُفعّل حسابك فور الموافقة عليه، ويمكنك تحديث هذه الصفحة للتحقق.`}
           </T>
           <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
             {!disabled ? <Button title="تحقّق الآن" icon="refresh-cw" onPress={() => refreshProfile()} /> : null}
