@@ -2,7 +2,7 @@ import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
 import { Page } from "@/components/madar/shell";
-import { AvatarStack, Button, C, ColorPicker, EmptyState, ErrorBox, Field, IconButton, Input, Loading, Select, Sheet, T, Tap, confirmAction, useIsWide, useToast } from "@/components/madar/ui";
+import { AvatarStack, Button, C, ColorPicker, EmptyState, ErrorBox, Field, Icon, IconButton, Input, Loading, Select, Sheet, T, Tap, confirmAction, useIsWide, useToast } from "@/components/madar/ui";
 import { isOverdue } from "@/lib/madar/format";
 import { PALETTE } from "@/lib/madar/labels";
 import { canCreateDepartment, canDeleteDepartment, canEditDepartment } from "@/lib/madar/permissions";
@@ -63,6 +63,14 @@ export default function DepartmentsScreen() {
                       {d.name}
                     </T>
                     <T className="text-[12px] text-muted">{manager ? `المدير: ${manager.full_name}` : "بدون مدير محدد"}</T>
+                    {d.supervises_all ? (
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                        <Icon name="shield" size={12} color={C.primary} />
+                        <T weight="semibold" className="text-[11.5px]" style={{ color: C.primary }}>
+                          إشراف عام على كل الأقسام
+                        </T>
+                      </View>
+                    ) : null}
                   </View>
                   {canEditDepartment(me, d) ? <IconButton icon="edit-2" color={C.muted} label="تعديل" onPress={() => setEditing(d)} /> : null}
                 </View>
@@ -120,6 +128,7 @@ function Mini({ label, value, color }: { label: string; value: number; color?: s
 function DepartmentForm({ visible, onClose, department }: { visible: boolean; onClose: () => void; department: Department | null }) {
   const me = useMe();
   const canDelete = canDeleteDepartment(me);
+  const canSetGeneral = canCreateDepartment(me);
   const save = useSaveDepartment();
   const del = useDeleteDepartment();
   const toast = useToast();
@@ -128,6 +137,7 @@ function DepartmentForm({ visible, onClose, department }: { visible: boolean; on
   const [description, setDescription] = useState("");
   const [color, setColor] = useState(PALETTE[0]);
   const [managerId, setManagerId] = useState<string | null>(null);
+  const [supervisesAll, setSupervisesAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (visible) {
@@ -135,6 +145,7 @@ function DepartmentForm({ visible, onClose, department }: { visible: boolean; on
       setDescription(department?.description ?? "");
       setColor(department?.color ?? PALETTE[Math.floor(Math.random() * PALETTE.length)]);
       setManagerId(department?.manager_id ?? null);
+      setSupervisesAll(department?.supervises_all ?? false);
       setError(null);
     }
   }, [visible, department]);
@@ -155,7 +166,16 @@ function DepartmentForm({ visible, onClose, department }: { visible: boolean; on
               setError(null);
               if (!name.trim()) return setError("اكتب اسم القسم");
               save.mutate(
-                { id: department?.id, input: { name: name.trim(), description: description.trim() || null, color, manager_id: managerId } },
+                {
+                  id: department?.id,
+                  input: {
+                    name: name.trim(),
+                    description: description.trim() || null,
+                    color,
+                    manager_id: managerId,
+                    ...(canSetGeneral ? { supervises_all: supervisesAll } : {}),
+                  },
+                },
                 {
                   onSuccess: () => {
                     toast.show(department ? "حُفظ القسم" : "أُضيف القسم");
@@ -196,6 +216,32 @@ function DepartmentForm({ visible, onClose, department }: { visible: boolean; on
       <Field label="مدير القسم" hint="يظهر كمرجع؛ صلاحيات الإدارة تأتي من دور العضو وقسمه.">
         <Select value={managerId} onChange={setManagerId} options={managers.map((m) => ({ value: m.id, label: m.full_name }))} noneLabel="بدون مدير" placeholder="بدون مدير" title="مدير القسم" />
       </Field>
+      {canSetGeneral ? (
+        <Field label="نطاق الإشراف" hint="قسم واحد فقط في الشركة يمكنه متابعة ومراجعة مهام كل الأقسام.">
+          <Tap onPress={() => setSupervisesAll((v) => !v)}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 10,
+                borderWidth: 1,
+                borderColor: supervisesAll ? C.primary : C.border,
+                backgroundColor: C.surface,
+                borderRadius: 12,
+                padding: 12,
+              }}
+            >
+              <Icon name={supervisesAll ? "check-square" : "square"} size={18} color={supervisesAll ? C.primary : C.muted} />
+              <View style={{ flex: 1, gap: 2 }}>
+                <T weight="semibold" className="text-[13px]">
+                  مشرف على كل الأقسام
+                </T>
+                <T className="text-[12px] text-muted">يمنح مدير ومشرفي هذا القسم متابعة ومراجعة مهام الشركة كلها.</T>
+              </View>
+            </View>
+          </Tap>
+        </Field>
+      ) : null}
       <Field label="اللون">
         <ColorPicker value={color} onChange={setColor} colors={PALETTE} />
       </Field>

@@ -58,6 +58,28 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const profile = profileQuery.data ?? null;
   const companyId = profile?.company_id ?? null;
 
+  // General supervision is a department flag; the client mirrors it onto the profile
+  // so the permission helpers can stay pure functions of (me, task).
+  const departmentFlagQuery = useQuery({
+    queryKey: ["departments", "mine", profile?.department_id],
+    enabled: !!profile?.department_id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("departments")
+        .select("supervises_all")
+        .eq("id", profile!.department_id!)
+        .maybeSingle();
+      if (error) throw error;
+      return !!(data as { supervises_all: boolean } | null)?.supervises_all;
+    },
+    staleTime: 60_000,
+  });
+
+  const effectiveProfile = useMemo<Profile | null>(
+    () => (profile ? { ...profile, department_supervises_all: !!departmentFlagQuery.data } : null),
+    [profile, departmentFlagQuery.data],
+  );
+
   const companyQuery = useQuery({
     queryKey: ["company", companyId],
     enabled: !!companyId,
@@ -79,7 +101,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       ready,
       session,
       userId,
-      profile,
+      profile: effectiveProfile,
       profileLoading: !!userId && profileQuery.isLoading,
       company,
       isDeveloper,
@@ -89,7 +111,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         queryClient.clear();
       },
     }),
-    [ready, session, userId, profile, profileQuery, company, isDeveloper, queryClient],
+    [ready, session, userId, effectiveProfile, profileQuery, company, isDeveloper, queryClient],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

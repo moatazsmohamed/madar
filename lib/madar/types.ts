@@ -43,6 +43,7 @@ export interface Department {
   description: string | null;
   color: string;
   manager_id: string | null;
+  supervises_all: boolean;
   created_at: string;
 }
 
@@ -92,6 +93,8 @@ export interface Profile {
   company_id: string | null;
   created_at: string;
   updated_at: string;
+  /** Derived on the client from the member's department; not a profiles column. */
+  department_supervises_all?: boolean;
 }
 
 export interface Invitation {

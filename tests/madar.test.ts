@@ -18,7 +18,7 @@ import {
   timeInTz,
   zonedToUtc,
 } from "@/lib/madar/format";
-import { assignableRoles, canCreateTask, canDeleteTask, canManageTask, canReviewTask, canTrackTime, canWorkOnTask, isMonthLocked, isSelfOwned, isTaskDayClosed } from "@/lib/madar/permissions";
+import { assignableRoles, canCreateTask, canDeleteTask, canManageTask, canReviewTask, canTrackTime, canWorkOnTask, isGeneralLead, isMonthLocked, isSelfOwned, isTaskDayClosed } from "@/lib/madar/permissions";
 import type { CompanyMonth, Profile, Task } from "@/lib/madar/types";
 
 const profile = (over: Partial<Profile>): Profile =>
@@ -166,6 +166,20 @@ describe("permission mirrors", () => {
     expect(canReviewTask(supervisor, assigned)).toBe(true);
     expect(canReviewTask(otherSupervisor, assigned)).toBe(false);
     expect(canReviewTask(employee, assigned)).toBe(false);
+  });
+
+  it("gives the general supervision department company-wide oversight", () => {
+    const generalManager = profile({ id: "gm", role: "manager", department_id: "general", department_supervises_all: true });
+    const generalSupervisor = profile({ id: "gs", role: "supervisor", department_id: "general", department_supervises_all: true });
+    const marketing = task({ department_id: "marketing" });
+    expect(canManageTask(generalManager, marketing)).toBe(true);
+    expect(canReviewTask(generalManager, marketing)).toBe(true);
+    expect(canReviewTask(generalSupervisor, marketing)).toBe(true);
+    expect(canWorkOnTask(generalManager, marketing)).toBe(true);
+    expect(canManageTask(generalSupervisor, marketing)).toBe(false);
+    expect(canManageTask(otherManager, task({ department_id: "ops" }))).toBe(false);
+    expect(isGeneralLead(generalManager)).toBe(true);
+    expect(isGeneralLead(manager)).toBe(false);
   });
 
   it("reserves task creation for the company admin", () => {

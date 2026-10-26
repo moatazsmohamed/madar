@@ -20,9 +20,9 @@ import {
   useIsWide,
   useToast,
 } from "@/components/madar/ui";
-import { addDays, fmtDateTime, fmtDayFull, fmtHours, fmtMonth, isOverdue, todayISO } from "@/lib/madar/format";
+import { addDays, endOfMonth, fmtDateTime, fmtDayFull, fmtHours, fmtMonth, isOverdue, todayISO } from "@/lib/madar/format";
 import { PRIORITY_LABELS, PRIORITY_ORDER, STATUS_LABELS, STATUS_ORDER } from "@/lib/madar/labels";
-import { canCreateTask, canReviewTask, isAssignee, isLead } from "@/lib/madar/permissions";
+import { canCreateTask, canReviewTask, isAssignee, isGeneralLead, isLead } from "@/lib/madar/permissions";
 import { useCloseDay, useCloseMonth, useDays, useLookups, useMonths, useTasks } from "@/lib/madar/queries";
 import { sortTasks, useMinutesMap, type Sort } from "@/lib/madar/task-utils";
 import { useMe } from "@/lib/madar/session";
@@ -49,6 +49,7 @@ export default function TasksScreen() {
 
   const companyAdmin = me.role === "admin";
   const lead = isLead(me);
+  const companyScope = companyAdmin || isGeneralLead(me);
   const scopes: { value: Scope; label: string }[] = companyAdmin
     ? [
         { value: "all", label: "كل المهام" },
@@ -59,7 +60,7 @@ export default function TasksScreen() {
       ]
     : lead
       ? [
-          { value: "all", label: "مهام القسم" },
+          { value: "all", label: companyScope ? "كل المهام" : "مهام القسم" },
           { value: "mine", label: "مهامي" },
           { value: "review", label: "للمراجعة" },
           { value: "overdue", label: "متأخرة" },
@@ -116,6 +117,8 @@ export default function TasksScreen() {
   }, [daysQuery.data, monthTasks, today]);
   const todayRow = days.find((d) => d.day === today);
   const canCloseToday = companyAdmin && selectedMonth?.status === "open" && monthIsCurrent && todayRow?.status === "open";
+  const monthLastDay = selectedMonth ? endOfMonth(selectedMonth.period) : null;
+  const canCloseMonth = companyAdmin && selectedMonth?.status === "open" && monthLastDay === today;
 
   /** New tasks land on the selected day, or the first open day from today. */
   const defaultDay = useMemo(() => {
@@ -153,7 +156,7 @@ export default function TasksScreen() {
   const filtersActive = !!(status || priority || projectId || assigneeId || departmentId || q);
 
   const closeSelectedMonth = async () => {
-    if (!selectedMonth) return;
+    if (!selectedMonth || !canCloseMonth) return;
     if (!(await confirmAction(`إغلاق ${fmtMonth(selectedMonth.period)}؟ سيُحفظ كل ما فيه ويصبح للعرض فقط ولا يمكن تعديله بعد ذلك.`, "إغلاق الشهر"))) return;
     closeMonth.mutate(selectedMonth.id, {
       onSuccess: () => toast.show("أُغلق الشهر وأُرشف بكل بياناته"),
@@ -191,7 +194,14 @@ export default function TasksScreen() {
             <Button title="إغلاق اليوم" icon="lock" variant="secondary" onPress={closeToday} loading={closeDay.isPending} />
           ) : null}
           {companyAdmin && selectedMonth?.status === "open" ? (
-            <Button title="إغلاق الشهر" icon="archive" variant="ghost" onPress={closeSelectedMonth} loading={closeMonth.isPending} />
+            <Button
+              title="إغلاق الشهر"
+              icon="archive"
+              variant="ghost"
+              onPress={closeSelectedMonth}
+              loading={closeMonth.isPending}
+              disabled={!canCloseMonth}
+            />
           ) : null}
         </>
       }
@@ -225,6 +235,11 @@ export default function TasksScreen() {
             {selectedMonth.status === "open"
               ? "كل يوم يُغلق تلقائيًا في منتصف الليل بتوقيت الشركة (أو يدويًا من مدير الشركة)، ويُفتح يوم جديد. المهام غير المنتهية تبقى مؤرشفة كمتأخرة."
               : `شهر مؤرشف — أُغلق ${fmtDateTime(selectedMonth.closed_at)}. كل بياناته محفوظة للعرض فقط.`}
+          </T>
+        ) : null}
+        {companyAdmin && selectedMonth?.status === "open" && !canCloseMonth && monthLastDay ? (
+          <T className="text-[12px] text-muted">
+            {`إغلاق الشهر يدويًا متاح في آخر يوم فقط (${fmtDayFull(monthLastDay)})؛ بعدها يتقفل تلقائيًا ويُفتح شهر جديد.`}
           </T>
         ) : null}
       </View>
@@ -296,7 +311,7 @@ export default function TasksScreen() {
               />
             </View>
           ) : null}
-          {companyAdmin && departments.length ? (
+          {companyScope && departments.length ? (
             <View style={{ minWidth: 150, flex: 1, maxWidth: 220 }}>
               <Select value={departmentId} onChange={setDepartmentId} options={departments.map((d) => ({ value: d.id, label: d.name, color: d.color }))} noneLabel="كل الأقسام" placeholder="كل الأقسام" title="القسم" />
             </View>

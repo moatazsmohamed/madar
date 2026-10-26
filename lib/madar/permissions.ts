@@ -12,6 +12,8 @@ export const isViewer = (me: Profile | null | undefined) => me?.role === "viewer
 export const isLead = (me: Profile | null | undefined) => !!me && (me.role === "admin" || DEPT_LEADS.includes(me.role));
 /** Department-scoped oversight (manager or supervisor). */
 export const isDeptLead = (me: Profile | null | undefined) => !!me && DEPT_LEADS.includes(me.role);
+/** Leads of the department flagged as general supervision oversee every department. */
+export const isGeneralLead = (me: Profile | null | undefined) => isDeptLead(me) && !!me?.department_supervises_all;
 
 export function isAssignee(me: Profile | null | undefined, task: Task) {
   return !!me && !!task.task_assignees?.some((a) => a.user_id === me.id);
@@ -31,14 +33,16 @@ export function isTaskDayClosed(task: Task, dayStatus?: "open" | "closed") {
 export function canReviewTask(me: Profile | null | undefined, task: Task) {
   if (!me || me.status !== "active" || isMonthLocked(task)) return false;
   if (me.role === "admin") return true;
-  return isDeptLead(me) && !!me.department_id && task.department_id === me.department_id;
+  if (!isDeptLead(me)) return false;
+  return (!!me.department_id && task.department_id === me.department_id) || !!me.department_supervises_all;
 }
 
-/** Admins manage the whole company; managers manage their department only. */
+/** Admins manage the whole company; managers manage their department (or all departments under general supervision). */
 export function canManageTask(me: Profile | null | undefined, task: Task) {
   if (!me || me.status !== "active" || isMonthLocked(task)) return false;
   if (me.role === "admin") return true;
-  return me.role === "manager" && !!me.department_id && task.department_id === me.department_id;
+  if (me.role !== "manager") return false;
+  return (!!me.department_id && task.department_id === me.department_id) || !!me.department_supervises_all;
 }
 
 export function canWorkOnTask(me: Profile | null | undefined, task: Task) {
@@ -71,7 +75,8 @@ export function canCreateProject(me: Profile | null | undefined) {
 export function canEditProject(me: Profile | null | undefined, project: Project) {
   if (!me) return false;
   if (me.role === "admin") return true;
-  return me.role === "manager" && !!me.department_id && project.department_id === me.department_id;
+  if (me.role !== "manager") return false;
+  return (!!me.department_id && project.department_id === me.department_id) || !!me.department_supervises_all;
 }
 
 export function canDeleteProject(me: Profile | null | undefined, project: Project) {
