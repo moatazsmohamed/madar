@@ -10,7 +10,7 @@ import {
   STATUS_ORDER,
   STATUS_TONE,
 } from "@/lib/madar/labels";
-import { canManageTask, canWorkOnTask, isAdmin, isSelfOwned } from "@/lib/madar/permissions";
+import { canCreateTask, canEditTaskDetails, canManageTask, canReviewTask, canWorkOnTask, isAdmin, isAssignee, isMonthLocked, isSelfOwned } from "@/lib/madar/permissions";
 import { useLookups, useSaveTask, useSetTaskStatus } from "@/lib/madar/queries";
 import { useMe } from "@/lib/madar/session";
 import type { Priority, Task, TaskInput, TaskStatus } from "@/lib/madar/types";
@@ -71,13 +71,16 @@ export function Assignees({ task, size = 24 }: { task: Task; size?: number }) {
   return <AvatarStack people={people} size={size} />;
 }
 
-/** Status transitions the current member is allowed to make (mirrors the tasks_guard trigger). */
+/** Status transitions the current member is allowed to make (mirrors the tasks_before_write trigger). */
 export function allowedTransitions(me: ReturnType<typeof useMe>, task: Task): TaskStatus[] {
-  if (!canWorkOnTask(me, task)) return [];
-  const manage = canManageTask(me, task);
-  const self = isSelfOwned(me, task);
-  if (!manage && !self && task.status === "done") return [];
-  return STATUS_ORDER.filter((s) => s !== task.status && (manage || self || s !== "done"));
+  if (!me || me.status !== "active" || isMonthLocked(task)) return [];
+  if (canManageTask(me, task)) return STATUS_ORDER.filter((s) => s !== task.status);
+  if (canReviewTask(me, task)) return task.status === "review" ? ["done", "in_progress"] : [];
+  if (canWorkOnTask(me, task) && isAssignee(me, task)) {
+    if (task.status === "done" && !isSelfOwned(me, task)) return [];
+    return STATUS_ORDER.filter((s) => s !== task.status && (s !== "done" || isSelfOwned(me, task)));
+  }
+  return [];
 }
 
 export function StatusMenu({ task, trigger }: { task: Task; trigger?: (open: () => void) => React.ReactNode }) {
@@ -86,6 +89,7 @@ export function StatusMenu({ task, trigger }: { task: Task; trigger?: (open: () 
   const setStatus = useSetTaskStatus();
   const toast = useToast();
   const options = allowedTransitions(me, task);
+  const locked = isMonthLocked(task);
   const opener = () => setOpen(true);
   return (
     <>
@@ -123,7 +127,15 @@ export function StatusMenu({ task, trigger }: { task: Task; trigger?: (open: () 
               <Icon name="arrow-left" size={15} color={C.muted} />
             </Tap>
           ))}
-          {options.length === 0 ? <T className="text-muted">لا تملك صلاحية تغيير حالة هذه المهمة.</T> : null}
+          {options.length === 0 ? (
+            <T className="text-muted">
+              {locked
+                ? "هذا الشهر مؤرشف؛ الحالة محفوظة للعرض فقط."
+                : me.role === "viewer"
+                  ? "حساب المشاهدة للاطلاع فقط."
+                  : "لا تملك صلاحية تغيير حالة هذه المهمة."}
+            </T>
+          ) : null}
         </View>
       </Sheet>
     </>
@@ -152,6 +164,7 @@ export function TaskForm({
   const save = useSaveTask();
   const toast = useToast();
   const admin = isAdmin(me);
+  const canCreate = canCreateTask(me);
 
   const initial = useMemo(
     () => ({
@@ -181,7 +194,9 @@ export function TaskForm({
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) => setForm((f) => ({ ...f, [key]: value }));
 
   const activePeople = profiles.filter((p) => p.status === "active" && p.role !== "viewer");
-  const assigneeOptions = activePeople
+  // Managers may only staff their own department; the database enforces the same rule.
+  const scopedPeople = admin ? activePeople : activePeople.filter((p) => p.department_id === me.department_id || form.assignees.includes(p.id));
+  const assigneeOptions = scopedPeople
     .slice()
     .sort((a, b) => {
       const da = a.department_id === me.department_id ? 0 : 1;
@@ -246,6 +261,8 @@ export function TaskForm({
       },
     );
   };
+
+  if (!(task ? canEditTaskDetails(me, task) : canCreate)) return null;
 
   return (
     <Sheet

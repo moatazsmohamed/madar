@@ -9,8 +9,32 @@ export interface Company {
   name: string;
   timezone: string;
   status: "active" | "suspended" | "pending";
+  join_code: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface CompanyJoinInfo {
+  name: string;
+  timezone: string;
+  status: "active" | "suspended" | "pending";
+}
+
+export interface DeveloperCompanyStats {
+  company_id: string;
+  name: string;
+  status: "active" | "suspended" | "pending";
+  join_code: string;
+  timezone: string;
+  members: number;
+  active_members: number;
+  departments: number;
+  open_tasks: number;
+  review_tasks: number;
+  done_tasks: number;
+  overdue_tasks: number;
+  minutes: number;
+  last_activity: string | null;
 }
 
 export interface Department {
@@ -20,6 +44,28 @@ export interface Department {
   color: string;
   manager_id: string | null;
   created_at: string;
+}
+
+export interface MonthSummary {
+  tasks: number;
+  done: number;
+  review: number;
+  open: number;
+  overdue: number;
+  minutes: number;
+  employees: number;
+  departments: number;
+}
+
+export interface CompanyMonth {
+  id: string;
+  company_id: string;
+  period: string;
+  status: "open" | "closed";
+  opened_at: string;
+  closed_at: string | null;
+  closed_by: string | null;
+  summary: MonthSummary | null;
 }
 
 export interface Profile {
@@ -83,6 +129,8 @@ export interface Task {
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+  month_id: string;
+  month?: CompanyMonth | null;
   task_assignees?: { user_id: string }[];
 }
 

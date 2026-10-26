@@ -7,7 +7,10 @@ import type {
   Attachment,
   Comment,
   Company,
+  CompanyJoinInfo,
+  CompanyMonth,
   Department,
+  DeveloperCompanyStats,
   Invitation,
   NotificationItem,
   Profile,
@@ -20,6 +23,8 @@ import type {
   TaskTimeTotal,
   TimeSession,
 } from "./types";
+
+const TASK_SELECT = "*, task_assignees(user_id), month:company_months(id, period, status, closed_at, summary)";
 
 async function run<T>(promise: PromiseLike<{ data: T | null; error: unknown }>): Promise<T> {
   const { data, error } = await promise;
@@ -61,11 +66,7 @@ export function useTasks() {
     queryKey: ["tasks"],
     queryFn: () =>
       run<Task[]>(
-        supabase
-          .from("tasks")
-          .select("*, task_assignees(user_id)")
-          .order("created_at", { ascending: false })
-          .limit(3000),
+        supabase.from("tasks").select(TASK_SELECT).order("created_at", { ascending: false }).limit(3000),
       ),
     staleTime: 15_000,
     refetchInterval: 60_000,
@@ -76,8 +77,22 @@ export function useTask(id: string | undefined) {
   return useQuery({
     queryKey: ["task", id],
     enabled: !!id,
-    queryFn: () =>
-      run<Task | null>(supabase.from("tasks").select("*, task_assignees(user_id)").eq("id", id!).maybeSingle()),
+    queryFn: () => run<Task | null>(supabase.from("tasks").select(TASK_SELECT).eq("id", id!).maybeSingle()),
+  });
+}
+
+/** Opens the current month if needed (closing past months) and lists archived periods. */
+export function useMonths() {
+  return useQuery({
+    queryKey: ["months"],
+    queryFn: async () => {
+      const { error } = await supabase.rpc("ensure_month");
+      if (error) throw error;
+      return run<CompanyMonth[]>(
+        supabase.from("company_months").select("*").order("period", { ascending: false }).limit(120),
+      );
+    },
+    staleTime: 60_000,
   });
 }
 
@@ -271,7 +286,7 @@ function useAction<TVars, TResult = unknown>(fn: (vars: TVars) => Promise<TResul
   });
 }
 
-const TASK_KEYS: QueryKey[] = [["tasks"], ["task"], ["activity"], ["task-activity"], ["notifications"]];
+const TASK_KEYS: QueryKey[] = [["tasks"], ["task"], ["activity"], ["task-activity"], ["notifications"], ["months"]];
 
 export function useSaveTask() {
   return useAction(
@@ -318,6 +333,18 @@ export function useDeleteTask() {
   return useAction(async (id: string) => {
     await run(supabase.from("tasks").delete().eq("id", id));
   }, [["tasks"], ["activity"], ["time-totals"]]);
+}
+
+/** Archives a month and locks every task, comment, file and time entry inside it. */
+export function useCloseMonth() {
+  return useAction(
+    async (monthId: string) => {
+      const { data, error } = await supabase.rpc("close_month", { p_month: monthId });
+      if (error) throw error;
+      return data as CompanyMonth;
+    },
+    [["months"], ["tasks"], ["task"], ["time-totals"], ["open-session"], ["task-sessions"], ["sessions"], ["activity"]],
+  );
 }
 
 export function useImportTasks() {
@@ -547,7 +574,7 @@ export function useCreateCompany() {
       admin_email: string;
       admin_password: string;
     }) => callAccounts({ action: "create_company", ...vars }),
-    [["companies"], ["profiles"]],
+    [["companies"], ["profiles"], ["developer-stats"]],
   );
 }
 
@@ -555,7 +582,59 @@ export function useReviewCompany() {
   return useAction(
     async (vars: { company_id: string; decision: "approve" | "reject" }) =>
       callAccounts({ action: "review_company", ...vars }),
-    [["companies"], ["profiles"]],
+    [["companies"], ["profiles"], ["developer-stats"]],
+  );
+}
+
+export function useCompanyJoinInfo(code: string | undefined) {
+  return useQuery({
+    queryKey: ["join-info", code],
+    enabled: !!code,
+    retry: false,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("company_join_info", { p_code: code! });
+      if (error) throw error;
+      return (data ?? null) as CompanyJoinInfo | null;
+    },
+  });
+}
+
+export function useDeveloperStats(enabled = true) {
+  return useQuery({
+    queryKey: ["developer-stats"],
+    enabled,
+    // The RPC aggregates every company; a cheap read even with many tenants.
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("developer_company_stats");
+      if (error) throw error;
+      return (data ?? []) as DeveloperCompanyStats[];
+    },
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+}
+
+export function useSetCompanyStatus() {
+  return useAction(
+    async (vars: { company_id: string; status: "active" | "suspended" }) => {
+      const { error } = await supabase.rpc("set_company_status", {
+        p_company: vars.company_id,
+        p_status: vars.status,
+      });
+      if (error) throw error;
+    },
+    [["companies"], ["developer-stats"]],
+  );
+}
+
+export function useRegenerateJoinCode() {
+  return useAction(
+    async (companyId: string) => {
+      const { data, error } = await supabase.rpc("regenerate_join_code", { p_company: companyId });
+      if (error) throw error;
+      return data as string;
+    },
+    [["companies"], ["developer-stats"]],
   );
 }
 

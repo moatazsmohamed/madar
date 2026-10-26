@@ -87,30 +87,47 @@ Deno.serve(async (req: Request) => {
     if (!passwordOk(body.password)) return fail("كلمة المرور يجب أن تكون 8 أحرف على الأقل");
     const fullName = text(body.full_name, 120);
     if (!fullName) return fail("أدخل اسمك");
+    const joinCode = text(body.join_code, 64).toLowerCase();
     const companyName = text(body.company_name, 120);
-    if (!companyName) return fail("أدخل اسم الشركة التي تريد الانضمام إليها");
+    const jobTitle = text(body.job_title, 120) || null;
+    if (!joinCode && !companyName) return fail("أدخل كود الشركة أو الاسم من رابط الدعوة");
     if (!(await hasDeveloper())) return fail("لم يتم إعداد حساب المطور بعد", 409);
 
-    const { data: company } = await admin
-      .from("companies")
-      .select("id, status")
-      .ilike("name", companyName)
-      .maybeSingle();
-    if (!company) return fail("لا توجد شركة بهذا الاسم، تأكد من الاسم أو اطلب من مدير الشركة إضافتك");
-    if (company.status !== "active") return fail("هذه الشركة موقوفة حاليًا", 403);
+    let company: { id: string; status: string } | null = null;
+    if (joinCode) {
+      const { data } = await admin
+        .from("companies")
+        .select("id, status")
+        .eq("join_code", joinCode)
+        .maybeSingle();
+      company = data;
+      if (!company) return fail("كود الدعوة غير صحيح، استخدم الرابط الذي أرسله لك مدير الشركة");
+    } else {
+      const { data } = await admin
+        .from("companies")
+        .select("id, status")
+        .ilike("name", companyName)
+        .maybeSingle();
+      company = data;
+      if (!company) return fail("لا توجد شركة بهذا الاسم، تأكد من الاسم أو استخدم رابط الدعوة");
+    }
+    if (company.status !== "active") return fail("التسجيل في هذه الشركة مغلق حاليًا", 403);
 
     const { data, error } = await admin.auth.admin.createUser({
       email: body.email.trim().toLowerCase(),
       password: body.password,
       email_confirm: true,
-      user_metadata: { full_name: fullName, company_id: company.id },
+      user_metadata: { full_name: fullName, company_id: company.id, job_title: jobTitle },
     });
     if (error || !data.user) return fail(friendlyAuthError(error?.message ?? ""));
     const { data: profile } = await admin
       .from("profiles")
-      .select("status")
+      .select("status, job_title")
       .eq("id", data.user.id)
       .single();
+    if (jobTitle && profile && !profile.job_title) {
+      await admin.from("profiles").update({ job_title: jobTitle }).eq("id", data.user.id);
+    }
     return reply(200, { ok: true, status: profile?.status ?? "pending" });
   }
 
@@ -144,6 +161,15 @@ Deno.serve(async (req: Request) => {
     if (error || !data.user) {
       await admin.from("companies").delete().eq("id", company.id);
       return fail(friendlyAuthError(error?.message ?? ""));
+    }
+    const { error: promoteError } = await admin
+      .from("profiles")
+      .update({ role: "admin", status: "pending" })
+      .eq("id", data.user.id);
+    if (promoteError) {
+      await admin.auth.admin.deleteUser(data.user.id);
+      await admin.from("companies").delete().eq("id", company.id);
+      return fail("تعذّر إرسال الطلب", 500);
     }
     return reply(200, { ok: true, company_id: company.id });
   }
@@ -196,6 +222,15 @@ Deno.serve(async (req: Request) => {
     if (error || !data.user) {
       await admin.from("companies").delete().eq("id", company.id);
       return fail(friendlyAuthError(error?.message ?? ""));
+    }
+    const { error: promoteError } = await admin
+      .from("profiles")
+      .update({ role: "admin", status: "active" })
+      .eq("id", data.user.id);
+    if (promoteError) {
+      await admin.auth.admin.deleteUser(data.user.id);
+      await admin.from("companies").delete().eq("id", company.id);
+      return fail("تعذّر إنشاء حساب مدير الشركة", 500);
     }
     return reply(200, { ok: true, company_id: company.id, user_id: data.user.id });
   }

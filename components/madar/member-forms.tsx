@@ -283,7 +283,7 @@ export function EditMemberSheet({ visible, onClose, member }: { visible: boolean
           </Field>
         </>
       ) : !self ? (
-        <InfoBox>تغيير الدور أو القسم أو حالة الحساب من صلاحيات مدير النظام.</InfoBox>
+        <InfoBox>تغيير الدور أو القسم أو حالة الحساب من صلاحيات مدير الشركة.</InfoBox>
       ) : null}
       <ErrorBox message={error} />
     </Sheet>

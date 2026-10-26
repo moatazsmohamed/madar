@@ -4,11 +4,25 @@ import { View } from "react-native";
 import { Page } from "@/components/madar/shell";
 import { TaskForm } from "@/components/madar/tasks";
 import { TaskCalendar, TaskKanban, TaskTable, TaskTimeline } from "@/components/madar/task-views";
-import { Button, Chip, EmptyState, Loading, SearchInput, Segmented, Select, T, ErrorBox, useIsWide } from "@/components/madar/ui";
-import { isOverdue } from "@/lib/madar/format";
+import {
+  Button,
+  Chip,
+  EmptyState,
+  InfoBox,
+  Loading,
+  SearchInput,
+  Segmented,
+  Select,
+  T,
+  ErrorBox,
+  confirmAction,
+  useIsWide,
+  useToast,
+} from "@/components/madar/ui";
+import { fmtDateTime, fmtHours, fmtMonth, isOverdue } from "@/lib/madar/format";
 import { PRIORITY_LABELS, PRIORITY_ORDER, STATUS_LABELS, STATUS_ORDER } from "@/lib/madar/labels";
-import { canCreateTask, canManageTask, isAssignee, isLead } from "@/lib/madar/permissions";
-import { useLookups, useTasks } from "@/lib/madar/queries";
+import { canCreateTask, canReviewTask, isAssignee, isLead } from "@/lib/madar/permissions";
+import { useCloseMonth, useLookups, useMonths, useTasks } from "@/lib/madar/queries";
 import { sortTasks, useMinutesMap, type Sort } from "@/lib/madar/task-utils";
 import { useMe } from "@/lib/madar/session";
 import type { Priority, TaskStatus } from "@/lib/madar/types";
@@ -20,14 +34,46 @@ type Scope = "all" | "mine" | "created" | "review" | "overdue";
 export default function TasksScreen() {
   const me = useMe();
   const router = useRouter();
+  const toast = useToast();
   const params = useLocalSearchParams<{ view?: string; scope?: string; project?: string; new?: string }>();
   const tasksQuery = useTasks();
+  const monthsQuery = useMonths();
+  const closeMonth = useCloseMonth();
   const minutes = useMinutesMap();
   const { profiles, projects, departments } = useLookups();
   const wide = useIsWide();
 
+  const companyAdmin = me.role === "admin";
+  const lead = isLead(me);
+  const scopes: { value: Scope; label: string }[] = companyAdmin
+    ? [
+        { value: "all", label: "كل المهام" },
+        { value: "mine", label: "مهامي" },
+        { value: "created", label: "أنشأتها" },
+        { value: "review", label: "للمراجعة" },
+        { value: "overdue", label: "متأخرة" },
+      ]
+    : lead
+      ? [
+          { value: "all", label: "مهام القسم" },
+          { value: "mine", label: "مهامي" },
+          { value: "review", label: "للمراجعة" },
+          { value: "overdue", label: "متأخرة" },
+        ]
+      : me.role === "viewer"
+        ? [
+            { value: "all", label: "مهام القسم" },
+            { value: "overdue", label: "متأخرة" },
+          ]
+        : [
+            { value: "mine", label: "مهامي" },
+            { value: "overdue", label: "متأخرة" },
+          ];
+  const requestedScope = scopes.find((s) => s.value === params.scope)?.value;
+
   const [view, setView] = useState<ViewMode>((params.view as ViewMode) || "table");
-  const [scope, setScope] = useState<Scope>((params.scope as Scope) || (isLead(me) || me.role === "viewer" ? "all" : "mine"));
+  const [scope, setScope] = useState<Scope>(requestedScope ?? (companyAdmin || lead || me.role === "viewer" ? "all" : "mine"));
+  const [monthId, setMonthId] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<TaskStatus | null>(null);
   const [priority, setPriority] = useState<Priority | null>(null);
@@ -38,12 +84,23 @@ export default function TasksScreen() {
   const [sort, setSort] = useState<Sort>("due");
   const [creating, setCreating] = useState(params.new === "1");
 
+  const months = monthsQuery.data ?? [];
+  const openMonth = months.find((m) => m.status === "open") ?? null;
+  const selectedMonth = (monthId ? months.find((m) => m.id === monthId) : null) ?? openMonth ?? months[0] ?? null;
+  const locked = selectedMonth?.status === "closed";
+  const canCreate = canCreateTask(me) && (!monthsQuery.isSuccess || !!openMonth);
+
+  const monthTasks = useMemo(
+    () => (tasksQuery.data ?? []).filter((t) => !selectedMonth || t.month_id === selectedMonth.id),
+    [tasksQuery.data, selectedMonth],
+  );
+
   const tasks = useMemo(() => {
     const term = q.trim().toLowerCase();
-    let list = (tasksQuery.data ?? []).filter((t) => {
+    let list = monthTasks.filter((t) => {
       if (scope === "mine" && !isAssignee(me, t)) return false;
       if (scope === "created" && t.created_by !== me.id) return false;
-      if (scope === "review" && !(t.status === "review" && (canManageTask(me, t) || t.reviewer_id === me.id || t.created_by === me.id))) return false;
+      if (scope === "review" && !(t.status === "review" && canReviewTask(me, t))) return false;
       if (scope === "overdue" && !isOverdue(t)) return false;
       if (status && t.status !== status) return false;
       if (priority && t.priority !== priority) return false;
@@ -51,31 +108,88 @@ export default function TasksScreen() {
       if (departmentId && t.department_id !== departmentId) return false;
       if (assigneeId && !t.task_assignees?.some((a) => a.user_id === assigneeId)) return false;
       if (hideDone && t.status === "done") return false;
-      if (term && !(`${t.title} ${t.description ?? ""} #${t.number}`.toLowerCase().includes(term))) return false;
+      if (term && !`${t.title} ${t.description ?? ""} #${t.number}`.toLowerCase().includes(term)) return false;
       return true;
     });
     list = sortTasks(list, sort);
     return list;
-  }, [tasksQuery.data, q, scope, status, priority, projectId, assigneeId, departmentId, hideDone, sort, me]);
+  }, [monthTasks, q, scope, status, priority, projectId, assigneeId, departmentId, hideDone, sort, me]);
 
   const filtersActive = !!(status || priority || projectId || assigneeId || departmentId || q);
 
-  const scopes: { value: Scope; label: string }[] = [
-    { value: "mine", label: "مهامي" },
-    { value: "all", label: me.role === "admin" || me.role === "viewer" ? "كل المهام" : isLead(me) ? "مهام القسم" : "كل ما يخصني" },
-    { value: "created", label: "أنشأتها" },
-    { value: "review", label: "للمراجعة" },
-    { value: "overdue", label: "متأخرة" },
-  ];
+  const closeSelectedMonth = async () => {
+    if (!selectedMonth) return;
+    if (!(await confirmAction(`إغلاق ${fmtMonth(selectedMonth.period)}؟ سيُحفظ كل ما فيه ويصبح للعرض فقط ولا يمكن تعديله بعد ذلك.`, "إغلاق الشهر"))) return;
+    closeMonth.mutate(selectedMonth.id, {
+      onSuccess: () => toast.show("أُغلق الشهر وأُرشف بكل بياناته"),
+      onError: (e) => toast.show(errorMessage(e), "error"),
+    });
+  };
 
   return (
     <Page
       title="المهام"
-      subtitle={tasksQuery.data ? `${tasks.length} من ${tasksQuery.data.length} مهمة` : undefined}
-      actions={canCreateTask(me) ? <Button title="مهمة جديدة" icon="plus" onPress={() => setCreating(true)} /> : null}
+      subtitle={
+        selectedMonth
+          ? `${fmtMonth(selectedMonth.period)} · ${tasks.length} من ${monthTasks.length} مهمة`
+          : tasksQuery.data
+            ? `${tasks.length} مهمة`
+            : undefined
+      }
+      actions={
+        <>
+          {canCreate ? <Button title="مهمة جديدة" icon="plus" onPress={() => setCreating(true)} /> : null}
+          {companyAdmin && selectedMonth?.status === "open" ? (
+            <Button title="إغلاق الشهر" icon="lock" variant="secondary" onPress={closeSelectedMonth} loading={closeMonth.isPending} />
+          ) : null}
+        </>
+      }
       maxWidth={view === "kanban" ? 1600 : 1240}
     >
-      <View style={{ gap: 12, marginBottom: 16 }}>
+      <View style={{ gap: 7, marginBottom: 16 }}>
+        <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          {months.slice(0, 6).map((m) => (
+            <Chip
+              key={m.id}
+              label={fmtMonth(m.period)}
+              icon={m.status === "open" ? "unlock" : "archive"}
+              active={selectedMonth?.id === m.id}
+              onPress={() => setMonthId(m.id)}
+            />
+          ))}
+          {months.length > 6 ? (
+            <View style={{ minWidth: 190, flex: 1, maxWidth: 240 }}>
+              <Select
+                value={selectedMonth?.id ?? null}
+                onChange={setMonthId}
+                options={months.map((m) => ({ value: m.id, label: fmtMonth(m.period), hint: m.status === "open" ? "مفتوح" : "مؤرشف" }))}
+                title="كل الأشهر"
+                placeholder="كل الأشهر"
+              />
+            </View>
+          ) : null}
+        </View>
+        {selectedMonth ? (
+          <T className="text-[12px] text-muted">
+            {selectedMonth.status === "open"
+              ? "شهر مفتوح: تُضاف إليه مهام الشهر الحالية، ويُغلق تلقائيًا مع بداية الشهر التالي أو يدويًا."
+              : `شهر مؤرشف — أُغلق ${fmtDateTime(selectedMonth.closed_at)}. كل بياناته محفوظة للعرض فقط.`}
+          </T>
+        ) : null}
+      </View>
+
+      {locked && selectedMonth?.summary ? (
+        <InfoBox tone="warning" icon="lock">
+          <T weight="semibold" className="text-[13px]">
+            ملخص {fmtMonth(selectedMonth.period)}
+          </T>
+          <T className="text-[12.5px]">
+            {`${selectedMonth.summary.tasks} مهمة · ${selectedMonth.summary.done} مكتملة · ${selectedMonth.summary.employees} موظف · ${fmtHours(selectedMonth.summary.minutes)} ساعة عمل`}
+          </T>
+        </InfoBox>
+      ) : null}
+
+      <View style={{ gap: 12, marginBottom: 16, marginTop: 12 }}>
         <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <Segmented
             value={view}
@@ -105,7 +219,7 @@ export default function TasksScreen() {
           <View style={{ minWidth: 150, flex: 1, maxWidth: 220 }}>
             <Select value={projectId} onChange={setProjectId} options={projects.map((p) => ({ value: p.id, label: p.name, color: p.color }))} noneLabel="كل المشاريع" placeholder="كل المشاريع" title="المشروع" />
           </View>
-          {isLead(me) || me.role === "viewer" ? (
+          {lead || me.role === "viewer" ? (
             <View style={{ minWidth: 150, flex: 1, maxWidth: 220 }}>
               <Select
                 value={assigneeId}
@@ -117,7 +231,7 @@ export default function TasksScreen() {
               />
             </View>
           ) : null}
-          {(me.role === "admin" || me.role === "viewer") && departments.length ? (
+          {companyAdmin && departments.length ? (
             <View style={{ minWidth: 150, flex: 1, maxWidth: 220 }}>
               <Select value={departmentId} onChange={setDepartmentId} options={departments.map((d) => ({ value: d.id, label: d.name, color: d.color }))} noneLabel="كل الأقسام" placeholder="كل الأقسام" title="القسم" />
             </View>
@@ -159,12 +273,12 @@ export default function TasksScreen() {
         <Loading />
       ) : tasksQuery.error ? (
         <ErrorBox message={errorMessage(tasksQuery.error)} />
-      ) : (tasksQuery.data ?? []).length === 0 ? (
+      ) : monthTasks.length === 0 ? (
         <EmptyState
           icon="check-square"
-          title="لا توجد مهام بعد"
-          hint={canCreateTask(me) ? "ابدأ بإضافة أول مهمة وإسنادها لفريقك." : "ستظهر هنا المهام المتاحة لك."}
-          action={canCreateTask(me) ? <Button title="مهمة جديدة" icon="plus" onPress={() => setCreating(true)} /> : null}
+          title={selectedMonth ? `لا توجد مهام في ${fmtMonth(selectedMonth.period)}` : "لا توجد مهام بعد"}
+          hint={canCreate ? "أضف مهام الشهر ووزّعها على الفريق." : "ستظهر هنا المهام المسندة إليك."}
+          action={canCreate ? <Button title="مهمة جديدة" icon="plus" onPress={() => setCreating(true)} /> : null}
         />
       ) : view === "kanban" ? (
         <TaskKanban tasks={tasks} minutes={minutes} />
@@ -175,8 +289,8 @@ export default function TasksScreen() {
       ) : (
         <TaskTable tasks={tasks} minutes={minutes} empty={<EmptyState icon="filter" title="لا توجد مهام مطابقة" hint="جرّب تغيير الفلاتر أو نطاق العرض." />} />
       )}
-      {!tasksQuery.isLoading && scope === "mine" && tasks.length === 0 && (tasksQuery.data ?? []).length > 0 ? (
-        <T className="mt-3 text-center text-[12px] text-muted">اعرض «كل ما يخصني» لرؤية المهام التي أنشأتها أو تراجعها.</T>
+      {!tasksQuery.isLoading && scope === "mine" && tasks.length === 0 && monthTasks.length > 0 && scopes[0]?.value !== "mine" ? (
+        <T className="mt-3 text-center text-[12px] text-muted">اعرض «{scopes[0].label}» لرؤية بقية المهام.</T>
       ) : null}
 
       <TaskForm

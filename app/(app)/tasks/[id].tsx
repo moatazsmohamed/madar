@@ -21,6 +21,7 @@ import {
   InfoBox,
   Input,
   Loading,
+  Pill,
   ProgressBar,
   SectionLabel,
   Segmented,
@@ -39,6 +40,7 @@ import {
   fmtDateTime,
   fmtDayFull,
   fmtMinutes,
+  fmtMonth,
   fmtRelative,
   fmtTime,
   sessionMinutes,
@@ -51,9 +53,11 @@ import {
   canDeleteTask,
   canEditTaskDetails,
   canManageTask,
+  canReviewTask,
   canTrackTime,
   canWorkOnTask,
   isAdmin,
+  isMonthLocked,
   isSelfOwned,
   isAssignee,
 } from "@/lib/madar/permissions";
@@ -152,6 +156,7 @@ function TaskHeader({ task }: { task: Task }) {
             </T>
           </Tap>
         ) : null}
+        {task.month ? <T className="text-[12px] text-muted">· {fmtMonth(task.month.period)}</T> : null}
       </View>
       <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
         <T weight="bold" style={{ flex: 1, minWidth: 240, fontSize: 25, lineHeight: 38 }}>
@@ -182,7 +187,16 @@ function TaskHeader({ task }: { task: Task }) {
         <StatusPill status={task.status} />
         <PriorityPill priority={task.priority} />
         <DueLabel task={task} />
+        {isMonthLocked(task) ? <Pill label="شهر مؤرشف" icon="archive" /> : null}
       </View>
+      {isMonthLocked(task) && task.month ? (
+        <InfoBox tone="neutral" icon="lock">
+          <T weight="semibold" className="text-[13px]">
+            {fmtMonth(task.month.period)} شهر مؤرشف
+          </T>
+          <T className="text-[12.5px]">أُغلق هذا الشهر، وكل مهامه وتعليقاته وسجل وقته محفوظة للعرض فقط.</T>
+        </InfoBox>
+      ) : null}
       <TaskForm visible={editing} onClose={() => setEditing(false)} task={task} />
     </View>
   );
@@ -238,6 +252,7 @@ function WorkflowCard({ task }: { task: Task }) {
   const [note, setNote] = useState("");
   const manage = canManageTask(me, task);
   const work = canWorkOnTask(me, task);
+  const review = canReviewTask(me, task);
   const self = isSelfOwned(me, task);
   const allowed = allowedTransitions(me, task);
   const { profileMap } = useLookups();
@@ -253,7 +268,7 @@ function WorkflowCard({ task }: { task: Task }) {
     );
 
   const actions: React.ReactNode[] = [];
-  if (task.status === "review" && manage) {
+  if (task.status === "review" && review) {
     actions.push(<Button key="approve" title="اعتماد وإغلاق" icon="check-circle" onPress={() => move("done", "تم اعتماد المهمة")} full />);
     actions.push(<Button key="return" title="إعادة للتنفيذ مع ملاحظة" icon="corner-up-right" variant="secondary" onPress={() => setReturning(true)} full />);
   } else if (task.status !== "done" && task.status !== "review" && work) {
@@ -281,10 +296,11 @@ function WorkflowCard({ task }: { task: Task }) {
     actions.push(<Button key="reopen" title="إعادة فتح المهمة" icon="rotate-ccw" variant="secondary" onPress={() => move("in_progress", "أُعيد فتح المهمة")} full />);
   }
 
-  const statusHint =
-    task.status === "review"
-      ? manage
-        ? "المهمة بانتظار اعتمادك."
+  const statusHint = isMonthLocked(task)
+    ? "الشهر مؤرشف؛ سير العمل محفوظ للعرض فقط."
+    : task.status === "review"
+      ? review
+        ? "المهمة بانتظار قرارك: اعتمدها أو أعدها للتنفيذ بملاحظة."
         : `بانتظار المراجعة${reviewer ? ` من ${reviewer.full_name}` : " من مدير القسم"}.`
       : task.status === "done"
         ? `اكتملت ${task.completed_at ? fmtRelative(task.completed_at) : ""}.`
@@ -425,7 +441,7 @@ function TimeCard({ task }: { task: Task }) {
         <View style={{ gap: 2 }}>
           {(showAll ? list : list.slice(0, 4)).map((s) => {
             const person = profileMap.get(s.user_id);
-            const canRemove = (s.user_id === me.id && s.ended_at) || isAdmin(me);
+            const canRemove = !isMonthLocked(task) && ((s.user_id === me.id && s.ended_at) || isAdmin(me));
             return (
               <View key={s.id} style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 6 }}>
                 <Avatar id={s.user_id} name={person?.full_name} size={24} />
@@ -583,6 +599,7 @@ function DetailsCard({ task }: { task: Task }) {
       <Divider />
       <DetailRow icon="user-check" label="المراجع" value={reviewer?.full_name ?? "مديرو القسم"} />
       <DetailRow icon="layers" label="القسم" value={dept?.name ?? "بدون قسم"} />
+      <DetailRow icon="calendar" label="الشهر" value={task.month ? `${fmtMonth(task.month.period)}${task.month.status === "closed" ? " · مؤرشف" : ""}` : "—"} />
       <DetailRow icon="play-circle" label="البدء" value={fmtDayFull(task.start_date)} />
       <DetailRow icon="flag" label="الاستحقاق" value={fmtDayFull(task.due_date)} />
       <DetailRow icon="user-plus" label="أنشأها" value={`${creator?.full_name ?? "—"} · ${fmtRelative(task.created_at)}`} />
@@ -680,6 +697,8 @@ function Comments({ task }: { task: Task }) {
   const toast = useToast();
   const [body, setBody] = useState("");
   const list = comments.data ?? [];
+  const open = !isMonthLocked(task);
+  const canWrite = open && (canWorkOnTask(me, task) || canReviewTask(me, task));
   const submit = () => {
     const v = body.trim();
     if (!v) return;
@@ -699,7 +718,7 @@ function Comments({ task }: { task: Task }) {
                   {author?.full_name ?? "عضو"}
                 </T>
                 <T className="flex-1 text-[11px] text-muted">{fmtRelative(c.created_at)}</T>
-                {c.author_id === me.id || isAdmin(me) ? (
+                {open && (c.author_id === me.id || isAdmin(me)) ? (
                   <Tap
                     onPress={async () => {
                       if (await confirmAction("حذف التعليق؟", "حذف")) remove.mutate(c.id);
@@ -714,11 +733,13 @@ function Comments({ task }: { task: Task }) {
           </View>
         );
       })}
-      {me.role !== "viewer" ? (
+      {canWrite ? (
         <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end" }}>
           <Input value={body} onChangeText={setBody} placeholder="اكتب تعليقًا…" multiline style={{ flex: 1, minHeight: 44 }} />
           <Button icon="send" label="إرسال التعليق" onPress={submit} loading={add.isPending} />
         </View>
+      ) : open && me.role === "viewer" ? (
+        <T className="text-[12px] text-muted">حساب المشاهدة للاطلاع فقط.</T>
       ) : null}
     </View>
   );

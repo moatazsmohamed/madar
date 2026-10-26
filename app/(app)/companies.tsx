@@ -1,6 +1,6 @@
-import { Redirect } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
-import { View } from "react-native";
+import { Platform, View } from "react-native";
 import { Page } from "@/components/madar/shell";
 import {
   Button,
@@ -14,23 +14,42 @@ import {
   Pill,
   SectionLabel,
   Select,
+  Sheet,
   T,
+  confirmAction,
   useIsWide,
   useToast,
 } from "@/components/madar/ui";
-import { fmtRelative } from "@/lib/madar/format";
+import { fmtMinutes, fmtRelative } from "@/lib/madar/format";
 import { TIMEZONES } from "@/lib/madar/labels";
-import { useCompanies, useCreateCompany, useProfiles, useReviewCompany } from "@/lib/madar/queries";
+import { copyText, joinUrl } from "@/lib/madar/links";
+import {
+  useCompanies,
+  useCreateCompany,
+  useDeveloperStats,
+  useProfiles,
+  useRegenerateJoinCode,
+  useResetPassword,
+  useReviewCompany,
+  useSetCompanyStatus,
+} from "@/lib/madar/queries";
 import { useSession } from "@/lib/madar/session";
+import type { DeveloperCompanyStats } from "@/lib/madar/types";
 import { errorMessage } from "@/lib/supabase";
+
+type CompanyAdmin = { id: string; full_name: string; email: string };
 
 export default function CompaniesScreen() {
   const { isDeveloper } = useSession();
+  const router = useRouter();
   const wide = useIsWide();
   const companies = useCompanies(isDeveloper);
+  const stats = useDeveloperStats(isDeveloper);
   const profiles = useProfiles();
   const create = useCreateCompany();
   const review = useReviewCompany();
+  const setStatus = useSetCompanyStatus();
+  const regenerate = useRegenerateJoinCode();
   const toast = useToast();
 
   const [name, setName] = useState("");
@@ -40,18 +59,25 @@ export default function CompaniesScreen() {
   const [adminPassword, setAdminPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [confirmReject, setConfirmReject] = useState<string | null>(null);
+  const [passwordFor, setPasswordFor] = useState<{ companyId: string; admins: CompanyAdmin[] } | null>(null);
 
   const adminsByCompany = useMemo(() => {
-    const map = new Map<string, string[]>();
+    const map = new Map<string, CompanyAdmin[]>();
     (profiles.data ?? [])
       .filter((p) => p.role === "admin" && p.company_id)
       .forEach((p) => {
         const list = map.get(p.company_id!) ?? [];
-        list.push(p.full_name || p.email);
+        list.push({ id: p.id, full_name: p.full_name || p.email, email: p.email });
         map.set(p.company_id!, list);
       });
     return map;
   }, [profiles.data]);
+
+  const statsById = useMemo(() => {
+    const map = new Map<string, DeveloperCompanyStats>();
+    (stats.data ?? []).forEach((row) => map.set(row.company_id, row));
+    return map;
+  }, [stats.data]);
 
   if (!isDeveloper) return <Redirect href="/dashboard" />;
 
@@ -100,10 +126,46 @@ export default function CompaniesScreen() {
     );
   };
 
+  const copyJoin = async (code: string) => {
+    try {
+      await copyText(joinUrl(code));
+      toast.show("تم نسخ رابط دعوة الموظفين");
+    } catch {
+      toast.show("تعذّر نسخ الرابط", "error");
+    }
+  };
+
+  const toggleStatus = async (companyId: string, status: "active" | "suspended") => {
+    const next = status === "active" ? "suspended" : "active";
+    const ok = await confirmAction(
+      next === "suspended"
+        ? "إيقاف هذه الشركة؟ لن يستطيع أعضاؤها الدخول أو التسجيل من رابط الدعوة حتى تعيد تفعيلها."
+        : "إعادة تفعيل هذه الشركة؟",
+      next === "suspended" ? "إيقاف الشركة" : "تفعيل الشركة",
+    );
+    if (!ok) return;
+    setStatus.mutate(
+      { company_id: companyId, status: next },
+      {
+        onSuccess: () => toast.show(next === "suspended" ? "تم إيقاف الشركة" : "تم تفعيل الشركة"),
+        onError: (e) => toast.show(errorMessage(e), "error"),
+      },
+    );
+  };
+
+  const reissue = async (company: { id: string; join_code: string }) => {
+    const ok = await confirmAction("إعادة توليد كود الدعوة؟ سيتوقف الرابط القديم فورًا.", "كود جديد");
+    if (!ok) return;
+    regenerate.mutate(company.id, {
+      onSuccess: (code) => toast.show(`كود الدعوة الجديد: ${code}`),
+      onError: (e) => toast.show(errorMessage(e), "error"),
+    });
+  };
+
   return (
-    <Page title="الشركات" subtitle="حساب المطور: راجع طلبات فتح الشركات، وأضف الشركات وافتح لكل شركة نظامها الكامل بمدير خاص بها.">
+    <Page title="الشركات" subtitle="حساب المطور: كل الشركات في مكان واحد — روابط الدعوة، التقارير، وحالة كل شركة.">
       <View style={{ flexDirection: wide ? "row" : "column", gap: 16, alignItems: wide ? "flex-start" : "stretch" }}>
-        <View style={{ flex: wide ? 1.1 : undefined, gap: 12 }}>
+        <View style={{ flex: wide ? 1.25 : undefined, gap: 12 }}>
           {pending.length ? (
             <>
               <SectionLabel>طلبات فتح شركات ({pending.length})</SectionLabel>
@@ -118,7 +180,7 @@ export default function CompaniesScreen() {
                       <Pill label="بانتظار الموافقة" tone="warning" dot />
                     </View>
                     <T className="text-[12.5px] text-muted">
-                      {admins.length ? `صاحب الطلب: ${admins.join("، ")}` : "صاحب الطلب غير محدد"}
+                      {admins.length ? `صاحب الطلب: ${admins.map((a) => a.full_name).join("، ")}` : "صاحب الطلب غير محدد"}
                       {" · "}
                       {TIMEZONES.find((t) => t.value === company.timezone)?.label ?? company.timezone}
                     </T>
@@ -163,10 +225,11 @@ export default function CompaniesScreen() {
           ) : (
             approved.map((company) => {
               const admins = adminsByCompany.get(company.id) ?? [];
+              const stat = statsById.get(company.id);
               return (
-                <Card key={company.id} style={{ gap: 8 }}>
+                <Card key={company.id} style={{ gap: 12 }}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                    <T weight="bold" style={{ fontSize: 16.5, lineHeight: 26, flex: 1 }}>
+                    <T weight="bold" style={{ fontSize: 17, lineHeight: 27, flex: 1 }}>
                       {company.name}
                     </T>
                     <Pill
@@ -178,9 +241,72 @@ export default function CompaniesScreen() {
                   <T className="text-[12.5px] text-muted">
                     {TIMEZONES.find((t) => t.value === company.timezone)?.label ?? company.timezone}
                     {" · "}
-                    {admins.length ? `مدير النظام: ${admins.join("، ")}` : "لا يوجد مدير نظام بعد"}
+                    {admins.length ? `مدير الشركة: ${admins.map((a) => a.full_name).join("، ")}` : "لا يوجد مدير شركة بعد"}
+                    {" · "}
+                    أُنشئت {fmtRelative(company.created_at)}
                   </T>
-                  <T className="text-[12px] text-muted">أُنشئت {fmtRelative(company.created_at)}</T>
+
+                  <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+                    <MiniStat label="أعضاء نشطون" value={stat ? `${stat.active_members}/${stat.members}` : "—"} />
+                    <MiniStat label="أقسام" value={stat ? String(stat.departments) : "—"} />
+                    <MiniStat label="مهام مفتوحة" value={stat ? String(stat.open_tasks) : "—"} />
+                    <MiniStat label="بانتظار المراجعة" value={stat ? String(stat.review_tasks) : "—"} />
+                    <MiniStat label="متأخرة" value={stat ? String(stat.overdue_tasks) : "—"} color={stat && stat.overdue_tasks ? C.error : undefined} />
+                    <MiniStat label="وقت مسجّل" value={stat ? fmtMinutes(stat.minutes) : "—"} />
+                  </View>
+
+                  <View style={{ gap: 6 }}>
+                    <T weight="semibold" className="text-[12px] text-muted">
+                      رابط دعوة الموظفين
+                    </T>
+                    <View style={{ flexDirection: "row", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <View style={{ flex: 1, minWidth: 200 }}>
+                        <Input
+                          value={joinUrl(company.join_code)}
+                          editable={false}
+                          style={{ textAlign: "left", writingDirection: "ltr", fontSize: 12.5 }}
+                        />
+                      </View>
+                      <Button title="نسخ" icon="copy" size="sm" variant="secondary" onPress={() => copyJoin(company.join_code)} />
+                      {Platform.OS === "web" ? (
+                        <Button
+                          title="فتح"
+                          icon="external-link"
+                          size="sm"
+                          variant="ghost"
+                          onPress={() => window.open(joinUrl(company.join_code), "_blank", "noopener,noreferrer")}
+                        />
+                      ) : null}
+                      <Button title="كود جديد" icon="refresh-cw" size="sm" variant="ghost" loading={regenerate.isPending} onPress={() => reissue(company)} />
+                    </View>
+                  </View>
+
+                  <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+                    <Button
+                      title="تقرير الشركة"
+                      icon="bar-chart-2"
+                      size="sm"
+                      variant="secondary"
+                      onPress={() => router.push(`/company-reports?company=${company.id}`)}
+                    />
+                    <Button
+                      title="كلمة مرور المدير"
+                      icon="key"
+                      size="sm"
+                      variant="ghost"
+                      disabled={!admins.length}
+                      onPress={() => setPasswordFor({ companyId: company.id, admins })}
+                    />
+                    <Button
+                      title={company.status === "active" ? "إيقاف الشركة" : "تفعيل الشركة"}
+                      icon={company.status === "active" ? "pause-circle" : "play-circle"}
+                      size="sm"
+                      variant={company.status === "active" ? "danger" : "secondary"}
+                      loading={setStatus.isPending}
+                      onPress={() => toggleStatus(company.id, company.status === "active" ? "active" : "suspended")}
+                    />
+                  </View>
+                  {stat?.last_activity ? <T className="text-[11.5px] text-muted">آخر نشاط على المنصة {fmtRelative(stat.last_activity)}</T> : null}
                 </Card>
               );
             })
@@ -189,7 +315,7 @@ export default function CompaniesScreen() {
 
         <Card style={{ flex: wide ? 1 : undefined, gap: 12 }}>
           <SectionLabel>إضافة شركة مباشرة</SectionLabel>
-          <InfoBox>تتجاوز هذه الطريقة انتظار الموافقة: عند الإنشاء يتكوّن حساب مدير نظام للشركة، ويسجّل الدخول به ليضيف الأقسام والموظفين.</InfoBox>
+          <InfoBox>تتجاوز هذه الطريقة انتظار الموافقة: عند الإنشاء يتكوّن حساب مدير الشركة، ويسجّل الدخول به ليضيف الأقسام والموظفين ويشارك رابط الدعوة.</InfoBox>
           <Field label="اسم الشركة" required>
             <Input value={name} onChangeText={setName} placeholder="مثال: شركة النور للتجارة" />
           </Field>
@@ -222,6 +348,94 @@ export default function CompaniesScreen() {
           <Button title="إنشاء الشركة" icon="plus" onPress={submit} loading={create.isPending} full />
         </Card>
       </View>
+
+      <AdminPasswordSheet target={passwordFor} onClose={() => setPasswordFor(null)} />
     </Page>
+  );
+}
+
+function MiniStat({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <View
+      style={{
+        flexGrow: 1,
+        minWidth: 86,
+        borderWidth: 1,
+        borderColor: C.border,
+        borderRadius: 12,
+        paddingVertical: 8,
+        paddingHorizontal: 10,
+        gap: 2,
+      }}
+    >
+      <T weight="bold" style={{ fontSize: 17, lineHeight: 26, color: color ?? C.foreground, fontVariant: ["tabular-nums"] }}>
+        {value}
+      </T>
+      <T className="text-[11px] text-muted">{label}</T>
+    </View>
+  );
+}
+
+function AdminPasswordSheet({ target, onClose }: { target: { companyId: string; admins: CompanyAdmin[] } | null; onClose: () => void }) {
+  const reset = useResetPassword();
+  const toast = useToast();
+  const [userId, setUserId] = useState<string | null>(null);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const close = () => {
+    setError(null);
+    setUserId(null);
+    setPassword("");
+    onClose();
+  };
+
+  const submit = () => {
+    setError(null);
+    const id = userId ?? target?.admins[0]?.id ?? null;
+    if (!id) return setError("اختر مدير الشركة");
+    if (password.length < 8) return setError("كلمة المرور يجب أن تكون 8 أحرف على الأقل");
+    reset.mutate(
+      { user_id: id, password },
+      {
+        onSuccess: () => {
+          toast.show("تم تحديث كلمة مرور المدير");
+          close();
+        },
+        onError: (e) => setError(errorMessage(e)),
+      },
+    );
+  };
+
+  return (
+    <Sheet
+      visible={!!target}
+      onClose={close}
+      title="كلمة مرور مدير الشركة"
+      subtitle="استخدمها إذا فقد المدير الوصول لحسابه، وسلّمها له بطريقة آمنة."
+      footer={
+        <>
+          <Button title="تحديث كلمة المرور" icon="key" onPress={submit} loading={reset.isPending} />
+          <Button title="إلغاء" variant="ghost" onPress={close} />
+        </>
+      }
+    >
+      {target && target.admins.length > 1 ? (
+        <Field label="مدير الشركة" required>
+          <Select
+            value={userId ?? target.admins[0].id}
+            onChange={(v) => setUserId(v)}
+            options={target.admins.map((a) => ({ value: a.id, label: a.full_name, hint: a.email }))}
+            title="مدير الشركة"
+          />
+        </Field>
+      ) : target?.admins[0] ? (
+        <InfoBox>{target.admins[0].full_name} · {target.admins[0].email}</InfoBox>
+      ) : null}
+      <Field label="كلمة المرور الجديدة" hint="8 أحرف على الأقل" required>
+        <Input value={password} onChangeText={setPassword} secureTextEntry placeholder="••••••••" onSubmitEditing={submit} />
+      </Field>
+      <ErrorBox message={error} />
+    </Sheet>
   );
 }

@@ -4,11 +4,11 @@ import { View } from "react-native";
 import { ActivityList } from "@/components/madar/activity";
 import { Page } from "@/components/madar/shell";
 import { DueLabel, PriorityPill, TaskForm } from "@/components/madar/tasks";
-import { Avatar, Button, C, Card, EmptyState, Icon, ProgressBar, SectionLabel, T, Tap, useIsWide, type IconName } from "@/components/madar/ui";
-import { addDays, fmtHours, fmtTodayHeading, greeting, isOverdue, sessionMinutes, startOfWeek, todayISO, zonedToUtc } from "@/lib/madar/format";
+import { Avatar, Button, C, Card, EmptyState, Icon, InfoBox, ProgressBar, SectionLabel, T, Tap, useIsWide, type IconName } from "@/components/madar/ui";
+import { addDays, fmtHours, fmtMonth, fmtTodayHeading, greeting, isOverdue, sessionMinutes, startOfWeek, todayISO, zonedToUtc } from "@/lib/madar/format";
 import { PROJECT_STATUS_LABELS, ROLE_LABELS } from "@/lib/madar/labels";
-import { canCreateTask, canManageTask, isAssignee, isLead } from "@/lib/madar/permissions";
-import { useLookups, useRecentActivity, useSessionsBetween, useTasks } from "@/lib/madar/queries";
+import { canCreateTask, canReviewTask, isAssignee, isLead } from "@/lib/madar/permissions";
+import { useLookups, useMonths, useRecentActivity, useSessionsBetween, useTasks } from "@/lib/madar/queries";
 import { useMe, useSession } from "@/lib/madar/session";
 import { sortTasks } from "@/lib/madar/task-utils";
 import type { Task } from "@/lib/madar/types";
@@ -19,10 +19,15 @@ export default function Dashboard() {
   const router = useRouter();
   const wide = useIsWide();
   const tasksQuery = useTasks();
+  const monthsQuery = useMonths();
   const { profiles, projects } = useLookups();
   const activity = useRecentActivity(10);
   const [creating, setCreating] = useState(false);
   const lead = isLead(me) || me.role === "viewer";
+  const months = monthsQuery.data ?? [];
+  const currentMonth = months.find((m) => m.status === "open") ?? months[0] ?? null;
+  const monthOpen = currentMonth?.status === "open";
+  const canCreate = canCreateTask(me) && (!monthsQuery.isSuccess || monthOpen);
 
   const today = todayISO();
   const weekStart = startOfWeek(today);
@@ -31,10 +36,10 @@ export default function Dashboard() {
   const sessions = useSessionsBetween(fromUtc, toUtc);
 
   const data = useMemo(() => {
-    const tasks = tasksQuery.data ?? [];
+    const tasks = (tasksQuery.data ?? []).filter((t) => !currentMonth || t.month_id === currentMonth.id);
     const open = tasks.filter((t) => t.status !== "done");
     const mine = open.filter((t) => isAssignee(me, t));
-    const review = tasks.filter((t) => t.status === "review" && (canManageTask(me, t) || t.reviewer_id === me.id));
+    const review = tasks.filter((t) => t.status === "review" && canReviewTask(me, t));
     const overdue = (lead ? open : mine).filter((t) => isOverdue(t));
     const dueToday = mine.filter((t) => t.due_date === today);
     const doneThisWeek = tasks.filter((t) => t.status === "done" && t.completed_at && t.completed_at >= fromUtc);
@@ -42,7 +47,7 @@ export default function Dashboard() {
     const myMinutes = allSessions.filter((s) => s.user_id === me.id).reduce((a, s) => a + sessionMinutes(s), 0);
     const teamMinutes = allSessions.reduce((a, s) => a + sessionMinutes(s), 0);
     return { tasks, open, mine, review, overdue, dueToday, doneThisWeek, myMinutes, teamMinutes, allSessions };
-  }, [tasksQuery.data, sessions.data, me, lead, today, fromUtc]);
+  }, [tasksQuery.data, sessions.data, me, lead, today, fromUtc, currentMonth]);
 
   const firstName = me.full_name.split(" ")[0];
 
@@ -66,9 +71,16 @@ export default function Dashboard() {
   return (
     <Page
       title={`${greeting()}، ${firstName}`}
-      subtitle={`${fmtTodayHeading()} · ${company?.name ?? ""}`}
-      actions={canCreateTask(me) ? <Button title="مهمة جديدة" icon="plus" onPress={() => setCreating(true)} /> : null}
+      subtitle={`${fmtTodayHeading()}${currentMonth ? ` · ${fmtMonth(currentMonth.period)}` : ""} · ${company?.name ?? ""}`}
+      actions={canCreate ? <Button title="مهمة جديدة" icon="plus" onPress={() => setCreating(true)} /> : null}
     >
+      {monthsQuery.isSuccess && !monthOpen ? (
+        <View style={{ marginBottom: 16 }}>
+          <InfoBox tone="warning" icon="lock">
+            لا يوجد شهر عمل مفتوح حاليًا. يُفتح شهر جديد تلقائيًا مع بداية الشهر التالي، وتبقى بيانات الشهر المؤرشف للعرض فقط.
+          </InfoBox>
+        </View>
+      ) : null}
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 18 }}>
         {stats.map((s) => (
           <Tap
@@ -216,7 +228,7 @@ function Workload({
   const router = useRouter();
   const me = useMe();
   const members = profiles.filter(
-    (p) => p.status === "active" && p.role !== "viewer" && (me.role === "admin" || me.role === "viewer" || p.department_id === me.department_id),
+    (p) => p.status === "active" && p.role !== "viewer" && (me.role === "admin" || (!!me.department_id && p.department_id === me.department_id)),
   );
   const rows = members
     .map((p) => {

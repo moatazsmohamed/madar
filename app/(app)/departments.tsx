@@ -5,7 +5,7 @@ import { Page } from "@/components/madar/shell";
 import { AvatarStack, Button, C, ColorPicker, EmptyState, ErrorBox, Field, IconButton, Input, Loading, Select, Sheet, T, Tap, confirmAction, useIsWide, useToast } from "@/components/madar/ui";
 import { isOverdue } from "@/lib/madar/format";
 import { PALETTE } from "@/lib/madar/labels";
-import { isAdmin } from "@/lib/madar/permissions";
+import { canCreateDepartment, canDeleteDepartment, canEditDepartment } from "@/lib/madar/permissions";
 import { useDeleteDepartment, useDepartments, useLookups, useSaveDepartment, useTasks } from "@/lib/madar/queries";
 import { useMe } from "@/lib/madar/session";
 import type { Department } from "@/lib/madar/types";
@@ -14,7 +14,7 @@ import { errorMessage } from "@/lib/supabase";
 export default function DepartmentsScreen() {
   const me = useMe();
   const router = useRouter();
-  const admin = isAdmin(me);
+  const canCreate = canCreateDepartment(me);
   const departments = useDepartments();
   const { profiles, projects, profileMap } = useLookups();
   const tasks = useTasks();
@@ -28,7 +28,7 @@ export default function DepartmentsScreen() {
     <Page
       title="الأقسام"
       subtitle={`${list.length} قسم`}
-      actions={admin ? <Button title="قسم جديد" icon="plus" onPress={() => setEditing("new")} /> : null}
+      actions={canCreate ? <Button title="قسم جديد" icon="plus" onPress={() => setEditing("new")} /> : null}
     >
       {departments.isLoading ? (
         <Loading />
@@ -36,8 +36,8 @@ export default function DepartmentsScreen() {
         <EmptyState
           icon="layers"
           title="لا توجد أقسام بعد"
-          hint={admin ? "قسّم فريقك إلى أقسام لتحديد صلاحيات المديرين والمشرفين." : "يضيف مدير النظام الأقسام."}
-          action={admin ? <Button title="قسم جديد" icon="plus" onPress={() => setEditing("new")} /> : null}
+          hint={canCreate ? "قسّم فريقك إلى أقسام لتحديد صلاحيات المديرين والمشرفين." : "يضيف مدير الشركة الأقسام."}
+          action={canCreate ? <Button title="قسم جديد" icon="plus" onPress={() => setEditing("new")} /> : null}
         />
       ) : (
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 14 }}>
@@ -64,7 +64,7 @@ export default function DepartmentsScreen() {
                     </T>
                     <T className="text-[12px] text-muted">{manager ? `المدير: ${manager.full_name}` : "بدون مدير محدد"}</T>
                   </View>
-                  {admin ? <IconButton icon="edit-2" color={C.muted} label="تعديل" onPress={() => setEditing(d)} /> : null}
+                  {canEditDepartment(me, d) ? <IconButton icon="edit-2" color={C.muted} label="تعديل" onPress={() => setEditing(d)} /> : null}
                 </View>
                 {d.description ? (
                   <T className="text-[13px] text-muted" numberOfLines={2}>
@@ -100,7 +100,7 @@ export default function DepartmentsScreen() {
           })}
         </View>
       )}
-      {admin && unassigned ? <T className="mt-4 text-[12.5px] text-muted">{unassigned} عضو نشط بدون قسم — عيّن أقسامهم من صفحة الفريق.</T> : null}
+      {canCreate && unassigned ? <T className="mt-4 text-[12.5px] text-muted">{unassigned} عضو نشط بدون قسم — عيّن أقسامهم من صفحة الفريق.</T> : null}
       <DepartmentForm visible={!!editing} onClose={() => setEditing(null)} department={editing === "new" ? null : editing} />
     </Page>
   );
@@ -118,6 +118,8 @@ function Mini({ label, value, color }: { label: string; value: number; color?: s
 }
 
 function DepartmentForm({ visible, onClose, department }: { visible: boolean; onClose: () => void; department: Department | null }) {
+  const me = useMe();
+  const canDelete = canDeleteDepartment(me);
   const save = useSaveDepartment();
   const del = useDeleteDepartment();
   const toast = useToast();
@@ -165,7 +167,7 @@ function DepartmentForm({ visible, onClose, department }: { visible: boolean; on
             }}
           />
           <Button title="إلغاء" variant="secondary" onPress={onClose} />
-          {department ? (
+          {department && canDelete ? (
             <Button
               icon="trash-2"
               label="حذف القسم"

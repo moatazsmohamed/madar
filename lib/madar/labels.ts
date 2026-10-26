@@ -2,20 +2,20 @@ import type { Priority, ProjectStatus, Role, MemberStatus, TaskStatus } from "./
 
 export const ROLE_LABELS: Record<Role, string> = {
   developer: "حساب المطور",
-  admin: "مدير النظام",
+  admin: "مدير الشركة",
   manager: "مدير قسم",
-  supervisor: "مشرف",
+  supervisor: "مشرف الجودة",
   employee: "موظف",
   viewer: "مشاهد",
 };
 
 export const ROLE_HINTS: Record<Role, string> = {
   developer: "الحساب الأم: يضيف الشركات ويدير مديريها",
-  admin: "صلاحيات كاملة على الشركة والإعدادات",
-  manager: "يدير قسمه ومهامه ومشاريعه وموظفيه",
-  supervisor: "يتابع ويراجع مهام قسمه",
-  employee: "يعمل على المهام المسندة إليه",
-  viewer: "يطّلع على البيانات دون تعديل",
+  admin: "يرى كل الشركة ويوزّع مهام كل شهر ويغلق الشهر",
+  manager: "يدير قسمه بالكامل: موظفيه ومشاريعه ومهامه",
+  supervisor: "يتابع جودة مهام قسمه ويعتمدها أو يعيدها للتنفيذ دون إنشاء مهام",
+  employee: "يرى مهامه المسندة إليه فقط ويعمل عليها",
+  viewer: "يطّلع على مهام قسمه دون أي تعديل",
 };
 
 export const ROLE_ORDER: Role[] = ["admin", "manager", "supervisor", "employee", "viewer"];

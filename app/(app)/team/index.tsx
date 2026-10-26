@@ -3,12 +3,13 @@ import { useMemo, useState } from "react";
 import { View } from "react-native";
 import { AddMemberSheet, ApproveSheet } from "@/components/madar/member-forms";
 import { Page } from "@/components/madar/shell";
-import { Avatar, Button, C, Card, Chip, EmptyState, IconButton, Loading, Pill, SearchInput, SectionLabel, T, Tap, confirmAction, useIsWide, useToast } from "@/components/madar/ui";
+import { Avatar, Button, C, Card, Chip, EmptyState, IconButton, Input, Loading, Pill, SearchInput, SectionLabel, T, Tap, confirmAction, useIsWide, useToast } from "@/components/madar/ui";
 import { fmtRelative, isOverdue } from "@/lib/madar/format";
 import { MEMBER_STATUS_LABELS, ROLE_LABELS, ROLE_ORDER } from "@/lib/madar/labels";
+import { copyText, joinUrl } from "@/lib/madar/links";
 import { canManageMembers, isAdmin } from "@/lib/madar/permissions";
 import { useInvitationActions, useInvitations, useLookups, useProfiles, useTasks, useUpdateProfile } from "@/lib/madar/queries";
-import { useMe } from "@/lib/madar/session";
+import { useMe, useSession } from "@/lib/madar/session";
 import type { Profile, Role } from "@/lib/madar/types";
 import { errorMessage } from "@/lib/supabase";
 
@@ -80,6 +81,8 @@ export default function TeamScreen() {
           ))}
         </Card>
       ) : null}
+
+      {admin ? <InviteLinkCard /> : null}
 
       <View style={{ gap: 10, marginBottom: 16 }}>
         <SearchInput value={q} onChangeText={setQ} placeholder="ابحث بالاسم أو البريد أو المسمى…" />
@@ -189,5 +192,39 @@ export default function TeamScreen() {
       <AddMemberSheet visible={adding} onClose={() => setAdding(false)} />
       <ApproveSheet visible={!!approving} onClose={() => setApproving(null)} member={approving} />
     </Page>
+  );
+}
+
+function InviteLinkCard() {
+  const { company } = useSession();
+  const toast = useToast();
+  if (!company) return null;
+  const url = joinUrl(company.join_code);
+  return (
+    <Card style={{ gap: 10, marginBottom: 16 }}>
+      <SectionLabel>رابط دعوة الموظفين</SectionLabel>
+      <T className="text-[12.5px] text-muted">
+        شارك هذا الرابط مع موظفيك: يفتح صفحة باسم الشركة، يسجّل الموظف بنفسه، ثم توافق على حسابه من طلبات الانضمام هنا.
+      </T>
+      <View style={{ flexDirection: "row", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <View style={{ flex: 1, minWidth: 220 }}>
+          <Input value={url} editable={false} style={{ textAlign: "left", writingDirection: "ltr", fontSize: 12.5 }} />
+        </View>
+        <Button
+          title="نسخ الرابط"
+          icon="copy"
+          size="sm"
+          onPress={async () => {
+            try {
+              await copyText(url);
+              toast.show("تم نسخ رابط الدعوة");
+            } catch {
+              toast.show("تعذّر نسخ الرابط", "error");
+            }
+          }}
+        />
+      </View>
+      <T className="text-[11.5px] text-muted">كود الدعوة: {company.join_code}</T>
+    </Card>
   );
 }

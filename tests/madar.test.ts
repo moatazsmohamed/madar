@@ -18,8 +18,8 @@ import {
   timeInTz,
   zonedToUtc,
 } from "@/lib/madar/format";
-import { assignableRoles, canDeleteTask, canManageTask, canTrackTime, canWorkOnTask, isSelfOwned } from "@/lib/madar/permissions";
-import type { Profile, Task } from "@/lib/madar/types";
+import { assignableRoles, canCreateTask, canDeleteTask, canManageTask, canReviewTask, canTrackTime, canWorkOnTask, isMonthLocked, isSelfOwned } from "@/lib/madar/permissions";
+import type { CompanyMonth, Profile, Task } from "@/lib/madar/types";
 
 const profile = (over: Partial<Profile>): Profile =>
   ({
@@ -36,6 +36,17 @@ const profile = (over: Partial<Profile>): Profile =>
     ...over,
   }) as Profile;
 
+const openMonth: CompanyMonth = {
+  id: "m1",
+  company_id: "c1",
+  period: "2026-10-01",
+  status: "open",
+  opened_at: "2026-10-01T00:00:00Z",
+  closed_at: null,
+  closed_by: null,
+  summary: null,
+};
+
 const task = (over: Partial<Task>): Task =>
   ({
     id: "t1",
@@ -50,6 +61,8 @@ const task = (over: Partial<Task>): Task =>
     due_date: null,
     start_date: null,
     task_assignees: [],
+    month_id: "m1",
+    month: openMonth,
     ...over,
   }) as Task;
 
@@ -127,15 +140,39 @@ describe("permission mirrors", () => {
   const employee = profile({ id: "emp" });
   const manager = profile({ id: "mgr", role: "manager" });
   const otherManager = profile({ id: "mgr2", role: "manager", department_id: "marketing" });
+  const supervisor = profile({ id: "sup", role: "supervisor" });
+  const otherSupervisor = profile({ id: "sup2", role: "supervisor", department_id: "marketing" });
   const admin = profile({ id: "adm", role: "admin", department_id: null });
   const viewer = profile({ id: "view", role: "viewer" });
   const assigned = task({ task_assignees: [{ user_id: "emp" }] });
+  const closed = task({
+    task_assignees: [{ user_id: "emp" }],
+    status: "review",
+    month: { ...openMonth, status: "closed", closed_at: "2026-11-01T00:00:00Z", closed_by: "adm" },
+  });
 
-  it("lets department leads and admins manage, but not other departments", () => {
+  it("lets the company admin and the department manager manage tasks", () => {
     expect(canManageTask(admin, assigned)).toBe(true);
     expect(canManageTask(manager, assigned)).toBe(true);
     expect(canManageTask(otherManager, assigned)).toBe(false);
+    expect(canManageTask(supervisor, assigned)).toBe(false);
     expect(canManageTask(employee, assigned)).toBe(false);
+  });
+
+  it("lets supervisors review their department only", () => {
+    expect(canReviewTask(admin, assigned)).toBe(true);
+    expect(canReviewTask(manager, assigned)).toBe(true);
+    expect(canReviewTask(supervisor, assigned)).toBe(true);
+    expect(canReviewTask(otherSupervisor, assigned)).toBe(false);
+    expect(canReviewTask(employee, assigned)).toBe(false);
+  });
+
+  it("reserves task creation for the company admin", () => {
+    expect(canCreateTask(admin)).toBe(true);
+    expect(canCreateTask(manager)).toBe(false);
+    expect(canCreateTask(supervisor)).toBe(false);
+    expect(canCreateTask(employee)).toBe(false);
+    expect(canCreateTask(viewer)).toBe(false);
   });
 
   it("lets assignees work on and track time for their tasks", () => {
@@ -143,6 +180,15 @@ describe("permission mirrors", () => {
     expect(canTrackTime(employee, assigned)).toBe(true);
     expect(canTrackTime(employee, { ...assigned, status: "done" })).toBe(false);
     expect(canWorkOnTask(profile({ id: "someone" }), assigned)).toBe(false);
+  });
+
+  it("locks closed months for everyone, including the admin", () => {
+    expect(isMonthLocked(closed)).toBe(true);
+    expect(canManageTask(admin, closed)).toBe(false);
+    expect(canReviewTask(supervisor, closed)).toBe(false);
+    expect(canWorkOnTask(employee, closed)).toBe(false);
+    expect(canTrackTime(admin, closed)).toBe(false);
+    expect(canDeleteTask(admin, closed)).toBe(false);
   });
 
   it("keeps viewers and disabled accounts read-only", () => {

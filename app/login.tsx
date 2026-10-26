@@ -173,7 +173,7 @@ function LoginForm({ onRegister, onDeveloper }: { onRegister: () => void; onDeve
           </T>
         </Pressable>
       </View>
-      <T className="text-center text-[12px] text-muted">نسيت كلمة المرور؟ اطلب من مدير النظام أو مدير قسمك تعيين كلمة مرور جديدة.</T>
+      <T className="text-center text-[12px] text-muted">نسيت كلمة المرور؟ اطلب من مدير الشركة أو مدير قسمك تعيين كلمة مرور جديدة.</T>
       <View style={{ height: 1, backgroundColor: C.border }} />
       <Pressable onPress={onDeveloper} style={{ alignSelf: "center" }}>
         <T weight="semibold" style={{ color: C.forest, fontSize: 13 }}>
@@ -203,6 +203,8 @@ function RegisterForm({ onBack }: { onBack: () => void }) {
     setBusy(true);
     try {
       const normalized = email.trim().toLowerCase();
+      const target = company.trim();
+      const isCode = /^[a-z0-9]{6,32}$/i.test(target);
       await callAccounts(
         kind === "company"
           ? {
@@ -210,7 +212,7 @@ function RegisterForm({ onBack }: { onBack: () => void }) {
               email: normalized,
               password,
               full_name: name.trim(),
-              company_name: company.trim(),
+              company_name: target,
               timezone,
             }
           : {
@@ -218,7 +220,7 @@ function RegisterForm({ onBack }: { onBack: () => void }) {
               email: normalized,
               password,
               full_name: name.trim(),
-              company_name: company.trim(),
+              ...(isCode ? { join_code: target } : { company_name: target }),
             },
       );
       const { error: err } = await supabase.auth.signInWithPassword({ email: normalized, password });
@@ -262,14 +264,14 @@ function RegisterForm({ onBack }: { onBack: () => void }) {
       </View>
       <InfoBox>
         {kind === "company"
-          ? "أرسل بيانات شركتك، ويصل الطلب إلى حساب المطور للموافقة. بعد الموافقة تُنشأ الشركة وتدخلها كمدير نظام لها."
-          : "إذا أضافك مدير الشركة مسبقًا بهذا البريد سيُفعّل حسابك فورًا، وإلا سيبقى بانتظار موافقة مدير النظام."}
+          ? "أرسل بيانات شركتك، ويصل الطلب إلى حساب المطور للموافقة. بعد الموافقة تُنشأ الشركة وتدخلها كمدير شركة لها."
+          : "إذا أضافك مدير الشركة مسبقًا بهذا البريد سيُفعّل حسابك فورًا، وإلا سيبقى بانتظار موافقة مدير الشركة."}
       </InfoBox>
-      <Field label="اسم الشركة" required>
+      <Field label={kind === "company" ? "اسم الشركة" : "كود الدعوة أو اسم الشركة"} required>
         <Input
           value={company}
           onChangeText={setCompany}
-          placeholder={kind === "company" ? "مثال: شركة النور للتجارة" : "اكتب اسم الشركة كما سجّله مديرها"}
+          placeholder={kind === "company" ? "مثال: شركة النور للتجارة" : "الصق كود الدعوة من الرابط، أو اكتب اسم الشركة"}
         />
       </Field>
       {kind === "company" ? (

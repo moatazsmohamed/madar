@@ -11,11 +11,14 @@ export default function MoreScreen() {
   const router = useRouter();
   const { signOut, company } = useSession();
   const unread = (useNotifications().data ?? []).filter((n) => !n.read_at).length;
+  const seesCompany = me.role === "admin" || me.role === "manager" || me.role === "supervisor" || me.role === "viewer";
   const items: { href: string; label: string; hint: string; icon: IconName; badge?: number }[] = [
     { href: "/notifications", label: "الإشعارات", hint: "الإسنادات والمراجعات والتعليقات", icon: "bell", badge: unread },
     { href: "/reports", label: "التقارير", hint: "الساعات الفعلية والإنجاز والتصدير", icon: "bar-chart-2" },
-    { href: "/departments", label: "الأقسام", hint: "هيكل الشركة وحمل العمل", icon: "layers" },
-    { href: "/settings", label: "الإعدادات", hint: "حسابي والشركة واستيراد المهام", icon: "settings" },
+    ...(seesCompany
+      ? [{ href: "/departments", label: "الأقسام", hint: "هيكل الشركة وحمل العمل", icon: "layers" as IconName }]
+      : []),
+    { href: "/settings", label: "الإعدادات", hint: "حسابي وإعدادات الشركة", icon: "settings" },
   ];
   return (
     <Page title="المزيد">

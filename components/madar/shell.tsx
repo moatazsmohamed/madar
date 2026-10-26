@@ -7,18 +7,21 @@ import { fmtClock } from "@/lib/madar/format";
 import { ROLE_LABELS } from "@/lib/madar/labels";
 import { useNotifications, useOpenSession, useStopTimer, useTask } from "@/lib/madar/queries";
 import { useSession } from "@/lib/madar/session";
+import type { Role } from "@/lib/madar/types";
 import { errorMessage } from "@/lib/supabase";
 import { LogoMark, Wordmark } from "./logo";
 import { Avatar, C, Icon, IconButton, T, useIsWide, useNow, useToast, type IconName } from "./ui";
 
-type NavItem = { href: string; label: string; icon: IconName };
+type NavItem = { href: string; label: string; icon: IconName; roles?: Role[] };
+
+const COMPANY_WIDE: Role[] = ["admin", "manager", "supervisor", "viewer"];
 
 const NAV: NavItem[] = [
   { href: "/dashboard", label: "الرئيسية", icon: "home" },
   { href: "/tasks", label: "المهام", icon: "check-square" },
-  { href: "/projects", label: "المشاريع", icon: "folder" },
-  { href: "/team", label: "الفريق", icon: "users" },
-  { href: "/departments", label: "الأقسام", icon: "layers" },
+  { href: "/projects", label: "المشاريع", icon: "folder", roles: COMPANY_WIDE },
+  { href: "/team", label: "الفريق", icon: "users", roles: COMPANY_WIDE },
+  { href: "/departments", label: "الأقسام", icon: "layers", roles: COMPANY_WIDE },
   { href: "/reports", label: "التقارير", icon: "bar-chart-2" },
   { href: "/notifications", label: "الإشعارات", icon: "bell" },
   { href: "/settings", label: "الإعدادات", icon: "settings" },
@@ -27,18 +30,23 @@ const NAV: NavItem[] = [
 const DOCK: NavItem[] = [
   { href: "/dashboard", label: "الرئيسية", icon: "home" },
   { href: "/tasks", label: "المهام", icon: "check-square" },
-  { href: "/projects", label: "المشاريع", icon: "folder" },
-  { href: "/team", label: "الفريق", icon: "users" },
+  { href: "/team", label: "الفريق", icon: "users", roles: COMPANY_WIDE },
   { href: "/more", label: "المزيد", icon: "grid" },
 ];
 
+function visible(items: NavItem[], role: Role | undefined) {
+  return items.filter((i) => !i.roles || (!!role && i.roles.includes(role)));
+}
+
 const DEV_NAV: NavItem[] = [
   { href: "/companies", label: "الشركات", icon: "layers" },
+  { href: "/company-reports", label: "تقارير الشركات", icon: "bar-chart-2" },
   { href: "/settings", label: "الإعدادات", icon: "settings" },
 ];
 
 const DEV_DOCK: NavItem[] = [
   { href: "/companies", label: "الشركات", icon: "layers" },
+  { href: "/company-reports", label: "التقارير", icon: "bar-chart-2" },
   { href: "/settings", label: "الإعدادات", icon: "settings" },
 ];
 
@@ -64,7 +72,7 @@ function DesktopShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { profile, company, signOut } = useSession();
   const unread = useUnread();
-  const items = profile?.role === "developer" ? DEV_NAV : NAV;
+  const items = profile?.role === "developer" ? DEV_NAV : visible(NAV, profile?.role);
   return (
     <View style={{ flex: 1, flexDirection: "row", backgroundColor: C.background }}>
       <View
@@ -144,7 +152,7 @@ function MobileShell({ children }: { children: React.ReactNode }) {
   const { profile, company } = useSession();
   const unread = useUnread();
   const dev = profile?.role === "developer";
-  const dock = dev ? DEV_DOCK : DOCK;
+  const dock = dev ? DEV_DOCK : visible(DOCK, profile?.role);
   return (
     <View style={{ flex: 1, backgroundColor: C.background }}>
       <View
