@@ -42,8 +42,46 @@ export function errorMessage(error: unknown): string {
 }
 
 /** Calls the admin-users edge function and surfaces its Arabic error message. */
+const REFRESH_SKEW_MS = 120_000;
+let refreshPromise: Promise<boolean> | null = null;
+
+function isExpiredSessionError(error: unknown) {
+  const e = error as { message?: string; context?: Response };
+  return e?.context?.status === 401 || /session|jwt|الجلسة/i.test(e?.message ?? "");
+}
+
+/** Refreshes the stored session once; concurrent callers share the same request. */
+function refreshSession() {
+  if (!refreshPromise) {
+    refreshPromise = supabase.auth
+      .refreshSession()
+      .then(({ data, error }) => !!data.session && !error)
+      .catch(() => false)
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
+/**
+ * functions.invoke sends the stored access token as-is, so an idle tab or a
+ * woken-up phone can carry a token that expired while the refresh timer slept.
+ */
+async function ensureFreshSession() {
+  const { data } = await supabase.auth.getSession();
+  const expiresAt = (data.session?.expires_at ?? 0) * 1000;
+  if (!data.session || expiresAt - Date.now() > REFRESH_SKEW_MS) return;
+  await refreshSession();
+}
+
 export async function callAccounts<T = { ok: boolean }>(body: Record<string, unknown>): Promise<T> {
-  const { data, error } = await supabase.functions.invoke("admin-users", { body });
+  await ensureFreshSession();
+  let result = await supabase.functions.invoke("admin-users", { body });
+  if (result.error && isExpiredSessionError(result.error) && (await refreshSession())) {
+    result = await supabase.functions.invoke("admin-users", { body });
+  }
+  const { data, error } = result;
   if (error) {
     let message = error.message;
     const ctx = (error as { context?: Response }).context;
@@ -54,6 +92,9 @@ export async function callAccounts<T = { ok: boolean }>(body: Record<string, unk
       } catch {
         // keep original message
       }
+    }
+    if (isExpiredSessionError(error)) {
+      await supabase.auth.signOut({ scope: "local" }).catch(() => {});
     }
     throw new Error(errorMessage({ message }));
   }
