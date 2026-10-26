@@ -86,6 +86,11 @@ export default function ReportsScreen() {
     const withDue = completed.filter((t) => t.due_date);
     const onTime = withDue.filter((t) => isoDateInTz(new Date(t.completed_at!)) <= t.due_date!).length;
     const overdueNow = (tasksQuery.data ?? []).filter((t) => isOverdue(t) && (t.task_assignees ?? []).some((a) => memberIds.has(a.user_id))).length;
+    const planned = (tasksQuery.data ?? []).filter(
+      (t) => t.day >= from && t.day < toExclusive && (t.task_assignees ?? []).some((a) => memberIds.has(a.user_id)),
+    );
+    const plannedDone = planned.filter((t) => t.status === "done");
+    const completionRate = planned.length ? plannedDone.length / planned.length : null;
 
     const span = Math.min(62, daysBetween(from, toExclusive));
     const days = Array.from({ length: span }, (_, i) => addDays(from, i));
@@ -101,7 +106,17 @@ export default function ReportsScreen() {
         const done = completed.filter((t) => t.task_assignees?.some((a) => a.user_id === m.id));
         const due = done.filter((t) => t.due_date);
         const ontime = due.filter((t) => isoDateInTz(new Date(t.completed_at!)) <= t.due_date!).length;
-        return { m, minutes: ms.reduce((a, s) => a + sessionMinutes(s), 0), sessions: ms.length, done: done.length, onTimeRate: due.length ? ontime / due.length : null };
+        const memberPlanned = planned.filter((t) => t.task_assignees?.some((a) => a.user_id === m.id));
+        const memberDone = memberPlanned.filter((t) => t.status === "done").length;
+        return {
+          m,
+          minutes: ms.reduce((a, s) => a + sessionMinutes(s), 0),
+          sessions: ms.length,
+          done: done.length,
+          planned: memberPlanned.length,
+          completionRate: memberPlanned.length ? memberDone / memberPlanned.length : null,
+          onTimeRate: due.length ? ontime / due.length : null,
+        };
       })
       .sort((a, b) => b.minutes - a.minutes);
 
@@ -116,7 +131,21 @@ export default function ReportsScreen() {
     sessions.forEach((s) => taskMinutes.set(s.task_id, (taskMinutes.get(s.task_id) ?? 0) + sessionMinutes(s)));
     const topTasks = [...taskMinutes.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
 
-    return { sessions, totalMinutes, completed, onTimeRate: withDue.length ? onTime / withDue.length : null, overdueNow, days, perDay, byMember, byProject, topTasks };
+    return {
+      sessions,
+      totalMinutes,
+      completed,
+      onTimeRate: withDue.length ? onTime / withDue.length : null,
+      completionRate,
+      planned: planned.length,
+      plannedDone: plannedDone.length,
+      overdueNow,
+      days,
+      perDay,
+      byMember,
+      byProject,
+      topTasks,
+    };
   }, [sessionsQuery.data, tasksQuery.data, memberIds, scopedMembers, from, toExclusive, fromUtc, toUtc, taskMap]);
 
   const maxDay = Math.max(1, ...report.days.map((d) => report.perDay.get(d) ?? 0));
@@ -225,6 +254,11 @@ export default function ReportsScreen() {
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
             <Kpi label="ساعات العمل الفعلية" value={fmtHours(report.totalMinutes)} hint={`${report.sessions.length} جلسة`} />
             <Kpi label="مهام مكتملة" value={String(report.completed.length)} hint="خلال الفترة" />
+            <Kpi
+              label="نسبة الإنجاز"
+              value={report.completionRate === null ? "—" : `${Math.round(report.completionRate * 100)}%`}
+              hint={`${report.plannedDone} من ${report.planned} مهمة مخططة`}
+            />
             <Kpi label="الالتزام بالمواعيد" value={report.onTimeRate === null ? "—" : `${Math.round(report.onTimeRate * 100)}%`} hint="من المهام ذات الموعد" />
             <Kpi label="متأخرة حاليًا" value={String(report.overdueNow)} hint="مهام مفتوحة" color={report.overdueNow ? C.error : undefined} />
           </View>
@@ -268,6 +302,9 @@ export default function ReportsScreen() {
                 <T weight="semibold" className="text-[11.5px] text-muted" style={{ width: 60, textAlign: "center" }}>
                   مكتملة
                 </T>
+                <T weight="semibold" className="text-[11.5px] text-muted" style={{ width: 64, textAlign: "center" }}>
+                  الإنجاز
+                </T>
                 <T weight="semibold" className="text-[11.5px] text-muted" style={{ width: 70, textAlign: "center" }}>
                   بالموعد
                 </T>
@@ -286,6 +323,17 @@ export default function ReportsScreen() {
                   </T>
                   <T className="text-[13px]" style={{ width: 60, textAlign: "center" }}>
                     {r.done}
+                  </T>
+                  <T
+                    weight="semibold"
+                    className="text-[12.5px]"
+                    style={{
+                      width: 64,
+                      textAlign: "center",
+                      color: r.completionRate === null ? C.muted : r.completionRate < 0.5 ? C.error : r.completionRate < 0.8 ? C.warning : C.success,
+                    }}
+                  >
+                    {r.completionRate === null ? "—" : `${Math.round(r.completionRate * 100)}%`}
                   </T>
                   <T className="text-[13px]" style={{ width: 70, textAlign: "center", color: r.onTimeRate !== null && r.onTimeRate < 0.6 ? C.error : C.foreground }}>
                     {r.onTimeRate === null ? "—" : `${Math.round(r.onTimeRate * 100)}%`}

@@ -11,7 +11,7 @@ import {
   STATUS_TONE,
 } from "@/lib/madar/labels";
 import { canCreateTask, canEditTaskDetails, canManageTask, canReviewTask, canWorkOnTask, isAdmin, isAssignee, isMonthLocked, isSelfOwned, isTaskDayClosed } from "@/lib/madar/permissions";
-import { useLookups, useSaveTask, useSetTaskStatus } from "@/lib/madar/queries";
+import { useImportTasks, useLookups, useSaveTask, useSetTaskStatus } from "@/lib/madar/queries";
 import { useMe } from "@/lib/madar/session";
 import type { Priority, Task, TaskInput, TaskStatus } from "@/lib/madar/types";
 import { errorMessage } from "@/lib/supabase";
@@ -227,6 +227,7 @@ export function TaskForm({
   const me = useMe();
   const { profiles, projects, departments, departmentMap, projectMap, profileMap } = useLookups();
   const save = useSaveTask();
+  const importTasks = useImportTasks();
   const toast = useToast();
   const admin = isAdmin(me);
   const canCreate = canCreateTask(me);
@@ -252,10 +253,22 @@ export function TaskForm({
   );
   const [form, setForm] = useState(initial);
   const [error, setError] = useState<string | null>(null);
+  const [multi, setMulti] = useState(false);
+  const [bulk, setBulk] = useState("");
   useEffect(() => {
     setForm(initial);
     setError(null);
+    setMulti(false);
+    setBulk("");
   }, [initial]);
+
+  const bulkLines = useMemo(
+    () => bulk
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean),
+    [bulk],
+  );
 
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) => setForm((f) => ({ ...f, [key]: value }));
 
@@ -282,7 +295,33 @@ export function TaskForm({
     .filter((p) => admin || !p.department_id || p.department_id === me.department_id || p.id === form.project_id)
     .map((p) => ({ value: p.id, label: p.name, color: p.color }));
 
-  const submit = () => {
+  const buildInput = (
+    title: string,
+    description: string | null,
+    opts: { dates: boolean; status?: TaskStatus },
+  ): TaskInput => {
+    let departmentId = form.department_id;
+    if (admin && !departmentId && form.project_id) departmentId = projectMap.get(form.project_id)?.department_id ?? null;
+    if (!admin) departmentId = task ? task.department_id : me.department_id;
+    const h = Number(form.estimateHours || 0);
+    const m = Number(form.estimateMinutes || 0);
+    const estimate = opts.dates && h * 60 + m > 0 ? Math.round(h * 60 + m) : null;
+    return {
+      title,
+      description,
+      project_id: form.project_id,
+      department_id: departmentId,
+      status: opts.status ?? form.status,
+      priority: form.priority,
+      start_date: opts.dates ? form.start_date : null,
+      due_date: opts.dates ? form.due_date : null,
+      estimate_minutes: estimate,
+      reviewer_id: form.reviewer_id,
+      day: form.day,
+    };
+  };
+
+  const submitOne = (keepOpen: boolean) => {
     setError(null);
     if (!form.title.trim()) return setError("اكتب عنوان المهمة");
     if (!form.day) return setError("اختر يوم التنفيذ");
@@ -292,25 +331,8 @@ export function TaskForm({
     const h = Number(form.estimateHours || 0);
     const m = Number(form.estimateMinutes || 0);
     if (Number.isNaN(h) || Number.isNaN(m) || h < 0 || m < 0) return setError("الوقت المقدّر غير صحيح");
-    const estimate = h * 60 + m > 0 ? Math.round(h * 60 + m) : null;
 
-    let departmentId = form.department_id;
-    if (admin && !departmentId && form.project_id) departmentId = projectMap.get(form.project_id)?.department_id ?? null;
-    if (!admin) departmentId = task ? task.department_id : me.department_id;
-
-    const full: TaskInput = {
-      title: form.title.trim(),
-      description: form.description.trim() || null,
-      project_id: form.project_id,
-      department_id: departmentId,
-      status: form.status,
-      priority: form.priority,
-      start_date: form.start_date,
-      due_date: form.due_date,
-      estimate_minutes: estimate,
-      reviewer_id: form.reviewer_id,
-      day: form.day,
-    };
+    const full = buildInput(form.title.trim(), form.description.trim() || null, { dates: true });
     let input: Partial<TaskInput> = full;
     if (task) {
       input = {};
@@ -324,6 +346,10 @@ export function TaskForm({
       {
         onSuccess: (id) => {
           toast.show(task ? "تم حفظ التعديلات" : "تمت إضافة المهمة");
+          if (!task && keepOpen) {
+            setForm((f) => ({ ...f, title: "", description: "" }));
+            return;
+          }
           onClose();
           onSaved?.(id);
         },
@@ -332,28 +358,101 @@ export function TaskForm({
     );
   };
 
+  const submitBulk = () => {
+    setError(null);
+    if (!form.day) return setError("اختر يوم التنفيذ");
+    if (!bulkLines.length) return setError("اكتب مهمة واحدة على الأقل، كل مهمة في سطر");
+    if (bulkLines.length > 100) return setError("الحد الأقصى 100 مهمة في المرة");
+    const rows = bulkLines.map((title) => ({
+      input: buildInput(title, null, { dates: false, status: "todo" }),
+      assignees: form.assignees,
+    }));
+    importTasks.mutate(rows, {
+      onSuccess: (count) => {
+        toast.show(`أُضيفت ${count} مهام`);
+        setBulk("");
+        onClose();
+      },
+      onError: (e) => setError(errorMessage(e)),
+    });
+  };
+
   if (!(task ? canEditTaskDetails(me, task) : canCreate)) return null;
 
   return (
     <Sheet
       visible={visible}
       onClose={onClose}
-      title={task ? "تعديل المهمة" : "مهمة جديدة"}
-      subtitle={task ? `#${task.number}` : "حدّد المطلوب ومن ينفّذه وموعد التسليم"}
+      title={task ? "تعديل المهمة" : multi ? "إضافة عدة مهام" : "مهمة جديدة"}
+      subtitle={
+        task
+          ? `#${task.number}`
+          : multi
+            ? "كل سطر مهمة مستقلة؛ الإسناد واليوم والمشروع تُطبّق على الكل"
+            : "حدّد المطلوب ومن ينفّذه وموعد التسليم"
+      }
       width={640}
       footer={
         <>
-          <Button title={task ? "حفظ" : "إضافة المهمة"} icon="check" onPress={submit} loading={save.isPending} />
+          {multi ? (
+            <Button
+              title={bulkLines.length ? `إضافة ${bulkLines.length} مهمة` : "إضافة المهام"}
+              icon="plus"
+              onPress={submitBulk}
+              loading={importTasks.isPending}
+              disabled={!bulkLines.length}
+            />
+          ) : (
+            <Button title={task ? "حفظ" : "إضافة المهمة"} icon="check" onPress={() => submitOne(false)} loading={save.isPending} />
+          )}
+          {!task && !multi ? (
+            <Button title="إضافة وأخرى" icon="plus-circle" variant="secondary" onPress={() => submitOne(true)} loading={save.isPending} />
+          ) : null}
           <Button title="إلغاء" variant="secondary" onPress={onClose} />
         </>
       }
     >
-      <Field label="العنوان" required>
-        <Input value={form.title} onChangeText={(v) => set("title", v)} placeholder="مثال: إعداد عرض سعر لعميل جديد" autoFocus={!task} />
-      </Field>
-      <Field label="الوصف">
-        <Input value={form.description} onChangeText={(v) => set("description", v)} placeholder="التفاصيل والمخرجات المطلوبة" multiline />
-      </Field>
+      {!task ? (
+        <Segmented
+          size="sm"
+          value={multi ? "multi" : "single"}
+          onChange={(v) => {
+            setMulti(v === "multi");
+            setError(null);
+          }}
+          options={[
+            { value: "single", label: "مهمة واحدة", icon: "edit-3" },
+            { value: "multi", label: "عدة مهام", icon: "list" },
+          ]}
+        />
+      ) : null}
+      {multi ? (
+        <>
+          <Field label="المهام" hint="كل سطر = مهمة. مثال: 10 أسطر تعني 10 مهام لنفس الموظف." required>
+            <Input
+              value={bulk}
+              onChangeText={setBulk}
+              placeholder={"متابعة عملاء الجملة\nتجهيز تقرير المبيعات\nمراجعة حسابات الفرع"}
+              multiline
+              style={{ minHeight: 190 }}
+            />
+          </Field>
+          {bulkLines.length ? (
+            <T className="text-[12.5px]" style={{ color: C.primary }} weight="semibold">
+              {`${bulkLines.length} مهمة جاهزة للإضافة`}
+            </T>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <Field label="العنوان" required>
+            <Input value={form.title} onChangeText={(v) => set("title", v)} placeholder="مثال: إعداد عرض سعر لعميل جديد" autoFocus={!task} />
+          </Field>
+          <Field label="الوصف">
+            <Input value={form.description} onChangeText={(v) => set("description", v)} placeholder="التفاصيل والمخرجات المطلوبة" multiline />
+          </Field>
+        </>
+      )}
       <Field label="الأولوية">
         <Segmented
           size="sm"
@@ -413,7 +512,16 @@ export function TaskForm({
       </View>
       <View style={{ flexDirection: "row", gap: 12, flexWrap: "wrap" }}>
         <View style={{ flex: 1, minWidth: 180 }}>
-          <Field label="يوم التنفيذ" hint={admin ? "تُقفل مهام اليوم تلقائيًا مع نهاية اليوم" : "نقل المهام بين الأيام من صلاحيات مدير الشركة"}>
+          <Field
+            label="يوم التنفيذ"
+            hint={
+              admin
+                ? multi
+                  ? "تُسند كل المهام لهذا اليوم"
+                  : "تُقفل مهام اليوم تلقائيًا مع نهاية اليوم"
+                : "نقل المهام بين الأيام من صلاحيات مدير الشركة"
+            }
+          >
             {admin ? (
               <DateField value={form.day} onChange={(v) => set("day", v ?? todayISO())} />
             ) : (
@@ -421,16 +529,20 @@ export function TaskForm({
             )}
           </Field>
         </View>
-        <View style={{ flex: 1, minWidth: 180 }}>
-          <Field label="تاريخ البدء">
-            <DateField value={form.start_date} onChange={(v) => set("start_date", v)} />
-          </Field>
-        </View>
-        <View style={{ flex: 1, minWidth: 180 }}>
-          <Field label="تاريخ الاستحقاق">
-            <DateField value={form.due_date} onChange={(v) => set("due_date", v)} />
-          </Field>
-        </View>
+        {!multi ? (
+          <>
+            <View style={{ flex: 1, minWidth: 180 }}>
+              <Field label="تاريخ البدء">
+                <DateField value={form.start_date} onChange={(v) => set("start_date", v)} />
+              </Field>
+            </View>
+            <View style={{ flex: 1, minWidth: 180 }}>
+              <Field label="تاريخ الاستحقاق">
+                <DateField value={form.due_date} onChange={(v) => set("due_date", v)} />
+              </Field>
+            </View>
+          </>
+        ) : null}
       </View>
       <View style={{ flexDirection: "row", gap: 12, flexWrap: "wrap" }}>
         <View style={{ flex: 1, minWidth: 220 }}>
@@ -438,18 +550,20 @@ export function TaskForm({
             <Select value={form.reviewer_id} onChange={(v) => set("reviewer_id", v)} options={reviewerOptions} noneLabel="بدون مراجع محدد" placeholder="بدون مراجع محدد" title="اختر المراجع" />
           </Field>
         </View>
-        <View style={{ flex: 1, minWidth: 220 }}>
-          <Field label="الوقت المقدّر">
-            <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-              <Input value={form.estimateHours} onChangeText={(v) => set("estimateHours", v.replace(/[^0-9]/g, ""))} placeholder="0" keyboardType="number-pad" style={{ flex: 1 }} />
-              <T className="text-muted">ساعة</T>
-              <Input value={form.estimateMinutes} onChangeText={(v) => set("estimateMinutes", v.replace(/[^0-9]/g, ""))} placeholder="0" keyboardType="number-pad" style={{ flex: 1 }} />
-              <T className="text-muted">دقيقة</T>
-            </View>
-          </Field>
-        </View>
+        {!multi ? (
+          <View style={{ flex: 1, minWidth: 220 }}>
+            <Field label="الوقت المقدّر">
+              <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+                <Input value={form.estimateHours} onChangeText={(v) => set("estimateHours", v.replace(/[^0-9]/g, ""))} placeholder="0" keyboardType="number-pad" style={{ flex: 1 }} />
+                <T className="text-muted">ساعة</T>
+                <Input value={form.estimateMinutes} onChangeText={(v) => set("estimateMinutes", v.replace(/[^0-9]/g, ""))} placeholder="0" keyboardType="number-pad" style={{ flex: 1 }} />
+                <T className="text-muted">دقيقة</T>
+              </View>
+            </Field>
+          </View>
+        ) : null}
       </View>
-      {!task ? (
+      {!task && !multi ? (
         <Field label="الحالة الأولية">
           <Segmented
             size="sm"

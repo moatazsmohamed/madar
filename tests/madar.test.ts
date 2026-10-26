@@ -19,6 +19,7 @@ import {
   zonedToUtc,
 } from "@/lib/madar/format";
 import { assignableRoles, canCreateTask, canDeleteTask, canManageTask, canReviewTask, canTrackTime, canWorkOnTask, isGeneralLead, isMonthLocked, isSelfOwned, isTaskDayClosed } from "@/lib/madar/permissions";
+import { completionPercent, memberTallies, tallyTasks } from "@/lib/madar/progress";
 import type { CompanyMonth, Profile, Task } from "@/lib/madar/types";
 
 const profile = (over: Partial<Profile>): Profile =>
@@ -133,6 +134,42 @@ describe("CSV", () => {
     expect(parseCSV("\uFEFFa,b\r\n\r\n1,2\r\n")).toEqual([
       ["a", "b"],
       ["1", "2"],
+    ]);
+  });
+});
+
+describe("month completion percentages", () => {
+  const today = "2026-10-27";
+
+  it("rounds whole percentages and treats an empty scope as zero", () => {
+    expect(completionPercent(0, 0)).toBe(0);
+    expect(completionPercent(3, 10)).toBe(30);
+    expect(completionPercent(2, 3)).toBe(67);
+    expect(completionPercent(1, 3)).toBe(33);
+    expect(completionPercent(-1, 3)).toBe(0);
+    expect(completionPercent(5, 3)).toBe(100);
+  });
+
+  it("counts done, review and late tasks from the same denominator", () => {
+    const list = [
+      task({ id: "a", status: "done", day: "2026-10-10" }),
+      task({ id: "b", status: "review", day: today }),
+      task({ id: "c", status: "todo", day: "2026-10-20" }),
+      task({ id: "d", status: "in_progress", day: "2026-10-30", due_date: "2026-10-26" }),
+    ];
+    expect(tallyTasks(list, today)).toEqual({ total: 4, done: 1, review: 1, open: 3, overdue: 2, percent: 25 });
+  });
+
+  it("counts a shared task once per assignee and lists the lowest percentage first", () => {
+    const people = [profile({ id: "a", full_name: "Ali" }), profile({ id: "b", full_name: "Basma" })];
+    const list = [
+      task({ id: "t1", status: "done", day: today, task_assignees: [{ user_id: "a" }, { user_id: "b" }] }),
+      task({ id: "t2", status: "done", day: today, task_assignees: [{ user_id: "a" }] }),
+      task({ id: "t3", status: "todo", day: today, task_assignees: [{ user_id: "b" }] }),
+    ];
+    expect(memberTallies(list, people, today).map((r) => [r.user_id, r.done, r.total, r.percent])).toEqual([
+      ["b", 1, 2, 50],
+      ["a", 2, 2, 100],
     ]);
   });
 });

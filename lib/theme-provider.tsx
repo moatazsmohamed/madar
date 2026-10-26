@@ -5,8 +5,8 @@ import { SchemeColors, type ColorScheme } from "@/constants/theme";
 
 export type ThemePreference = "auto" | "light" | "dark";
 
-export const NIGHT_START_HOUR = 16;
-export const NIGHT_END_HOUR = 6;
+export const NIGHT_START_HOUR = 22;
+export const NIGHT_END_HOUR = 4;
 
 const STORAGE_KEY = "madar.theme";
 const CAIRO_TZ = "Africa/Cairo";
@@ -15,12 +15,15 @@ type ThemeContextValue = {
   colorScheme: ColorScheme;
   preference: ThemePreference;
   setPreference: (preference: ThemePreference) => void;
+  /** Current hour (0-23) in Cairo; drives the sky scene behind the app. */
+  hour: number;
 };
 
 const ThemeContext = createContext<ThemeContextValue>({
   colorScheme: "light",
   preference: "auto",
   setPreference: () => {},
+  hour: 12,
 });
 
 /** Hour (0-23) in Cairo, where the night schedule is defined. */
@@ -37,7 +40,7 @@ export function cairoHour(date = new Date()): number {
   }
 }
 
-/** Night mode runs from 4 PM until 6 AM Cairo time. */
+/** Night mode runs from 10 PM until 4 AM Cairo time. */
 export function isNightHour(hour: number) {
   return hour >= NIGHT_START_HOUR || hour < NIGHT_END_HOUR;
 }
@@ -107,8 +110,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   );
 
   const value = useMemo<ThemeContextValue>(
-    () => ({ colorScheme, preference, setPreference }),
-    [colorScheme, preference, setPreference],
+    () => ({ colorScheme, preference, setPreference, hour }),
+    [colorScheme, preference, setPreference, hour],
   );
 
   return (

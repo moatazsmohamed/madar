@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LogoMark, OrbitDecor, Wordmark } from "@/components/madar/logo";
+import { SkyBackdrop } from "@/components/madar/sky";
 import { Button, C, ErrorBox, Field, InfoBox, Input, Loading, Select, T, useIsWide } from "@/components/madar/ui";
 import { TIMEZONES } from "@/lib/madar/labels";
 import { useSession } from "@/lib/madar/session";
@@ -55,6 +56,7 @@ export default function LoginScreen() {
 
   return (
     <View style={{ flex: 1, flexDirection: "row", backgroundColor: C.background }}>
+      <SkyBackdrop />
       {wide ? <BrandPanel /> : null}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView

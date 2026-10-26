@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { View } from "react-native";
 import { DayCalendar } from "@/components/madar/day-calendar";
+import { MonthProgressCard } from "@/components/madar/month-progress";
 import { Page } from "@/components/madar/shell";
 import { TaskForm } from "@/components/madar/tasks";
 import { TaskCalendar, TaskKanban, TaskTable, TaskTimeline } from "@/components/madar/task-views";
@@ -23,6 +24,7 @@ import {
 import { addDays, endOfMonth, fmtDateTime, fmtDayFull, fmtHours, fmtMonth, isOverdue, todayISO } from "@/lib/madar/format";
 import { PRIORITY_LABELS, PRIORITY_ORDER, STATUS_LABELS, STATUS_ORDER } from "@/lib/madar/labels";
 import { canCreateTask, canReviewTask, isAssignee, isGeneralLead, isLead } from "@/lib/madar/permissions";
+import { completionPercent } from "@/lib/madar/progress";
 import { useCloseDay, useCloseMonth, useDays, useLookups, useMonths, useReopenMonth, useTasks } from "@/lib/madar/queries";
 import { sortTasks, useMinutesMap, type Sort } from "@/lib/madar/task-utils";
 import { useMe } from "@/lib/madar/session";
@@ -263,6 +265,12 @@ export default function TasksScreen() {
         ) : null}
       </View>
 
+      {selectedMonth && monthTasks.length > 0 ? (
+        <View style={{ marginBottom: 12 }}>
+          <MonthProgressCard month={selectedMonth} tasks={monthTasks} />
+        </View>
+      ) : null}
+
       {selectedMonth ? (
         <View style={{ gap: 10, marginBottom: 12 }}>
           <DayCalendar month={selectedMonth.period} tasks={monthTasks} days={days} selected={selectedDay} onSelect={setDaySel} />
@@ -283,7 +291,9 @@ export default function TasksScreen() {
             ملخص {fmtMonth(selectedMonth.period)}
           </T>
           <T className="text-[12.5px]">
-            {`${selectedMonth.summary.tasks} مهمة · ${selectedMonth.summary.done} مكتملة · ${selectedMonth.summary.employees} موظف · ${fmtHours(selectedMonth.summary.minutes)} ساعة عمل`}
+            {`${selectedMonth.summary.tasks} مهمة · ${selectedMonth.summary.done} مكتملة · ${
+              selectedMonth.summary.percent ?? completionPercent(selectedMonth.summary.done, selectedMonth.summary.tasks)
+            }% · ${selectedMonth.summary.employees} موظف · ${fmtHours(selectedMonth.summary.minutes)} ساعة عمل`}
           </T>
         </InfoBox>
       ) : null}

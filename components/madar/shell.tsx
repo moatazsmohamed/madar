@@ -10,6 +10,8 @@ import { useSession } from "@/lib/madar/session";
 import type { Role } from "@/lib/madar/types";
 import { errorMessage } from "@/lib/supabase";
 import { LogoMark, Wordmark } from "./logo";
+import { SkyBackdrop } from "./sky";
+import { ThemeToggle } from "./theme-toggle";
 import { Avatar, C, Icon, IconButton, T, useIsWide, useNow, useToast, type IconName } from "./ui";
 
 type NavItem = { href: string; label: string; icon: IconName; roles?: Role[] };
@@ -75,6 +77,7 @@ function DesktopShell({ children }: { children: React.ReactNode }) {
   const items = profile?.role === "developer" ? DEV_NAV : visible(NAV, profile?.role);
   return (
     <View style={{ flex: 1, flexDirection: "row", backgroundColor: C.background }}>
+      <SkyBackdrop />
       <View
         style={{
           width: 252,
@@ -86,11 +89,14 @@ function DesktopShell({ children }: { children: React.ReactNode }) {
           paddingBottom: 16,
         }}
       >
-        <View style={{ paddingHorizontal: 8, gap: 2 }}>
-          <Wordmark size={22} />
-          <T className="text-[12px] text-muted" numberOfLines={1}>
-            {profile?.role === "developer" ? "إدارة المنصة" : company?.name ?? ""}
-          </T>
+        <View style={{ paddingHorizontal: 8, flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Wordmark size={22} />
+            <T className="text-[12px] text-muted" numberOfLines={1}>
+              {profile?.role === "developer" ? "إدارة المنصة" : company?.name ?? ""}
+            </T>
+          </View>
+          <ThemeToggle />
         </View>
         <View style={{ marginTop: 18 }}>
           <TimerChip />
@@ -155,6 +161,7 @@ function MobileShell({ children }: { children: React.ReactNode }) {
   const dock = dev ? DEV_DOCK : visible(DOCK, profile?.role);
   return (
     <View style={{ flex: 1, backgroundColor: C.background }}>
+      <SkyBackdrop />
       <View
         style={{
           paddingTop: insets.top + 8,
@@ -163,7 +170,6 @@ function MobileShell({ children }: { children: React.ReactNode }) {
           flexDirection: "row",
           alignItems: "center",
           gap: 10,
-          backgroundColor: C.background,
         }}
       >
         <LogoMark size={30} />
@@ -175,6 +181,7 @@ function MobileShell({ children }: { children: React.ReactNode }) {
             {dev ? "إدارة المنصة" : company?.name ?? ""}
           </T>
         </View>
+        <ThemeToggle compact />
         <IconButton icon="bell" label="الإشعارات" badge={unread} onPress={() => router.push("/notifications" as any)} />
       </View>
       <View style={{ paddingHorizontal: 16 }}>

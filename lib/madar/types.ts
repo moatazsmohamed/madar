@@ -56,6 +56,8 @@ export interface MonthSummary {
   minutes: number;
   employees: number;
   departments: number;
+  /** Stored when the month closes; older rows fall back to done ÷ tasks. */
+  percent?: number;
 }
 
 export interface CompanyMonth {
