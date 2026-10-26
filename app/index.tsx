@@ -3,7 +3,8 @@ import { Loading } from "@/components/madar/ui";
 import { useSession } from "@/lib/madar/session";
 
 export default function Index() {
-  const { ready, session } = useSession();
+  const { ready, session, profile } = useSession();
   if (!ready) return <Loading />;
-  return <Redirect href={session ? "/dashboard" : "/login"} />;
+  if (!session) return <Redirect href="/login" />;
+  return <Redirect href={profile?.role === "developer" ? "/companies" : "/dashboard"} />;
 }

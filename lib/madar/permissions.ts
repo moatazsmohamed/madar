@@ -4,6 +4,7 @@ import type { Profile, Project, Role, Task } from "./types";
 
 const LEADS: Role[] = ["manager", "supervisor"];
 
+export const isDeveloper = (me: Profile | null | undefined) => me?.role === "developer";
 export const isAdmin = (me: Profile | null | undefined) => me?.role === "admin";
 export const isViewer = (me: Profile | null | undefined) => me?.role === "viewer";
 export const isLead = (me: Profile | null | undefined) => !!me && (me.role === "admin" || LEADS.includes(me.role));
@@ -53,7 +54,7 @@ export function isSelfOwned(me: Profile | null | undefined, task: Task) {
 }
 
 export function canCreateTask(me: Profile | null | undefined) {
-  return !!me && me.status === "active" && me.role !== "viewer";
+  return !!me && me.status === "active" && me.role !== "viewer" && me.role !== "developer";
 }
 
 export function canCreateProject(me: Profile | null | undefined) {

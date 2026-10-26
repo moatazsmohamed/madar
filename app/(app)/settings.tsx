@@ -101,17 +101,17 @@ function PasswordCard() {
 }
 
 function CompanyCard() {
-  const { settings } = useSession();
+  const { company } = useSession();
   const save = useSaveSettings();
   const toast = useToast();
-  const [name, setName] = useState(settings?.company_name ?? "");
-  const [tz, setTz] = useState<string | null>(settings?.timezone ?? "Africa/Cairo");
+  const [name, setName] = useState(company?.name ?? "");
+  const [tz, setTz] = useState<string | null>(company?.timezone ?? "Africa/Cairo");
   useEffect(() => {
-    if (settings) {
-      setName(settings.company_name);
-      setTz(settings.timezone);
+    if (company) {
+      setName(company.name);
+      setTz(company.timezone);
     }
-  }, [settings]);
+  }, [company]);
   return (
     <Card style={{ gap: 12 }}>
       <SectionLabel>الشركة</SectionLabel>
@@ -128,7 +128,7 @@ function CompanyCard() {
         onPress={() => {
           if (!name.trim()) return toast.show("اكتب اسم الشركة", "error");
           save.mutate(
-            { company_name: name.trim(), timezone: tz ?? "Africa/Cairo" },
+            { name: name.trim(), timezone: tz ?? "Africa/Cairo" },
             { onSuccess: () => toast.show("حُفظت إعدادات الشركة"), onError: (e) => toast.show(errorMessage(e), "error") },
           );
         }}

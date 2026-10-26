@@ -6,7 +6,7 @@ import type {
   Activity,
   Attachment,
   Comment,
-  CompanySettings,
+  Company,
   Department,
   Invitation,
   NotificationItem,
@@ -518,9 +518,37 @@ export function useInvitationActions() {
 }
 
 export function useSaveSettings() {
-  return useAction(async (patch: Partial<CompanySettings>) => {
-    await run(supabase.from("company_settings").update(patch).eq("id", 1).select("id").single());
-  }, [["settings"]]);
+  const { company } = useSession();
+  return useAction(
+    async (patch: Partial<Company>) => {
+      if (!company) throw new Error("لا توجد شركة مرتبطة بحسابك");
+      await run(supabase.from("companies").update(patch).eq("id", company.id).select("id").single());
+    },
+    [["company"], ["companies"]],
+  );
+}
+
+export function useCompanies(enabled = true) {
+  return useQuery({
+    queryKey: ["companies"],
+    enabled,
+    queryFn: () =>
+      run<Company[]>(supabase.from("companies").select("*").order("created_at", { ascending: false }).limit(500)),
+    staleTime: 30_000,
+  });
+}
+
+export function useCreateCompany() {
+  return useAction(
+    async (vars: {
+      name: string;
+      timezone: string;
+      admin_name: string;
+      admin_email: string;
+      admin_password: string;
+    }) => callAccounts({ action: "create_company", ...vars }),
+    [["companies"], ["profiles"]],
+  );
 }
 
 export function useNotificationActions() {

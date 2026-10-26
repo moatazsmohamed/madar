@@ -41,9 +41,9 @@ const env = {
 // Public, browser-safe runtime values. The Supabase publishable key is designed to ship in clients;
 // data access is enforced by Postgres row level security.
 const publicRuntime = {
-  supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? "https://nuotqfpkoffuwkoqdtte.supabase.co",
+  supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? "https://ppihzxabbysozbdmweje.supabase.co",
   supabaseKey:
-    process.env.EXPO_PUBLIC_SUPABASE_KEY ?? "sb_publishable_aFV-vjtaksRROqsw5sk4kQ_wZZ9y-sb",
+    process.env.EXPO_PUBLIC_SUPABASE_KEY ?? "sb_publishable_7Re-MNRopMsOjopgV2YNjg_fN0yUDiL",
 };
 const config: ExpoConfig = {
   name: env.appName,

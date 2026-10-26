@@ -1,6 +1,7 @@
 import type { Priority, ProjectStatus, Role, MemberStatus, TaskStatus } from "./types";
 
 export const ROLE_LABELS: Record<Role, string> = {
+  developer: "حساب المطور",
   admin: "مدير النظام",
   manager: "مدير قسم",
   supervisor: "مشرف",
@@ -9,6 +10,7 @@ export const ROLE_LABELS: Record<Role, string> = {
 };
 
 export const ROLE_HINTS: Record<Role, string> = {
+  developer: "الحساب الأم: يضيف الشركات ويدير مديريها",
   admin: "صلاحيات كاملة على الشركة والإعدادات",
   manager: "يدير قسمه ومهامه ومشاريعه وموظفيه",
   supervisor: "يتابع ويراجع مهام قسمه",

@@ -1,4 +1,4 @@
-// Madar account management: workspace setup, access requests, member creation and password resets.
+// Madar account management: developer setup, company provisioning, access requests and passwords.
 // Runs with the service role; every privileged action re-checks the caller's active profile.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -55,18 +55,22 @@ Deno.serve(async (req: Request) => {
   }
   const action = body.action;
 
+  const hasDeveloper = async () => {
+    const { count } = await admin
+      .from("profiles")
+      .select("id", { count: "exact", head: true })
+      .eq("role", "developer")
+      .eq("status", "active");
+    return (count ?? 0) > 0;
+  };
+
   // ---------- public actions ----------
   if (action === "setup") {
-    const { count, error: countError } = await admin
-      .from("profiles")
-      .select("id", { count: "exact", head: true });
-    if (countError) return fail("تعذّر التحقق من حالة مساحة العمل", 500);
-    if ((count ?? 0) > 0) return fail("تم إعداد مساحة العمل مسبقًا، سجّل الدخول", 409);
     if (!emailOk(body.email)) return fail("أدخل بريدًا إلكترونيًا صحيحًا");
     if (!passwordOk(body.password)) return fail("كلمة المرور يجب أن تكون 8 أحرف على الأقل");
     const fullName = text(body.full_name, 120);
     if (!fullName) return fail("أدخل اسمك");
-    const companyName = text(body.company_name, 120);
+    if (await hasDeveloper()) return fail("حساب المطور موجود بالفعل، سجّل الدخول", 409);
 
     const { data, error } = await admin.auth.admin.createUser({
       email: body.email.trim().toLowerCase(),
@@ -75,9 +79,6 @@ Deno.serve(async (req: Request) => {
       user_metadata: { full_name: fullName },
     });
     if (error || !data.user) return fail(friendlyAuthError(error?.message ?? ""));
-    if (companyName) {
-      await admin.from("company_settings").update({ company_name: companyName }).eq("id", 1);
-    }
     return reply(200, { ok: true });
   }
 
@@ -86,14 +87,23 @@ Deno.serve(async (req: Request) => {
     if (!passwordOk(body.password)) return fail("كلمة المرور يجب أن تكون 8 أحرف على الأقل");
     const fullName = text(body.full_name, 120);
     if (!fullName) return fail("أدخل اسمك");
-    const { count } = await admin.from("profiles").select("id", { count: "exact", head: true });
-    if ((count ?? 0) === 0) return fail("مساحة العمل لم تُجهّز بعد، ابدأ بإعداد حساب المدير", 409);
+    const companyName = text(body.company_name, 120);
+    if (!companyName) return fail("أدخل اسم الشركة التي تريد الانضمام إليها");
+    if (!(await hasDeveloper())) return fail("لم يتم إعداد حساب المطور بعد", 409);
+
+    const { data: company } = await admin
+      .from("companies")
+      .select("id, status")
+      .ilike("name", companyName)
+      .maybeSingle();
+    if (!company) return fail("لا توجد شركة بهذا الاسم، تأكد من الاسم أو اطلب من مدير الشركة إضافتك");
+    if (company.status !== "active") return fail("هذه الشركة موقوفة حاليًا", 403);
 
     const { data, error } = await admin.auth.admin.createUser({
       email: body.email.trim().toLowerCase(),
       password: body.password,
       email_confirm: true,
-      user_metadata: { full_name: fullName },
+      user_metadata: { full_name: fullName, company_id: company.id },
     });
     if (error || !data.user) return fail(friendlyAuthError(error?.message ?? ""));
     const { data: profile } = await admin
@@ -112,13 +122,52 @@ Deno.serve(async (req: Request) => {
 
   const { data: me } = await admin
     .from("profiles")
-    .select("id, role, status, department_id")
+    .select("id, role, status, department_id, company_id")
     .eq("id", authData.user.id)
     .single();
   if (!me || me.status !== "active") return fail("حسابك غير مفعّل", 403);
-  const myRole = me.role as Role;
+  const myRole = me.role as Role | "developer";
+
+  if (action === "create_company") {
+    if (myRole !== "developer") return fail("إضافة الشركات من صلاحيات حساب المطور", 403);
+    const name = text(body.name, 120);
+    if (!name) return fail("أدخل اسم الشركة");
+    const timezone = text(body.timezone, 64) || "Africa/Cairo";
+    const adminName = text(body.admin_name, 120);
+    if (!adminName) return fail("أدخل اسم مدير الشركة");
+    if (!emailOk(body.admin_email)) return fail("أدخل بريدًا إلكترونيًا صحيحًا لمدير الشركة");
+    if (!passwordOk(body.admin_password)) return fail("كلمة المرور يجب أن تكون 8 أحرف على الأقل");
+
+    const { data: company, error: companyError } = await admin
+      .from("companies")
+      .insert({ name, timezone })
+      .select("id")
+      .single();
+    if (companyError || !company) {
+      if (companyError?.code === "23505") return fail("اسم الشركة مستخدم بالفعل", 409);
+      return fail("تعذّر إنشاء الشركة", 500);
+    }
+
+    const { data, error } = await admin.auth.admin.createUser({
+      email: body.admin_email.trim().toLowerCase(),
+      password: body.admin_password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: adminName,
+        company_id: company.id,
+        role: "admin",
+        status: "active",
+      },
+    });
+    if (error || !data.user) {
+      await admin.from("companies").delete().eq("id", company.id);
+      return fail(friendlyAuthError(error?.message ?? ""));
+    }
+    return reply(200, { ok: true, company_id: company.id, user_id: data.user.id });
+  }
 
   if (action === "create_member") {
+    if (myRole === "developer") return fail("حساب المطور يضيف الشركات لا الموظفين", 403);
     if (!emailOk(body.email)) return fail("أدخل بريدًا إلكترونيًا صحيحًا");
     if (!passwordOk(body.password)) return fail("كلمة المرور يجب أن تكون 8 أحرف على الأقل");
     const role = (ROLES as readonly string[]).includes(body.role as string) ? (body.role as Role) : "employee";
@@ -126,6 +175,7 @@ Deno.serve(async (req: Request) => {
     const fullName = text(body.full_name, 120);
     const jobTitle = text(body.job_title, 120) || null;
     if (!fullName) return fail("أدخل اسم الموظف");
+    if (!me.company_id) return fail("حسابك غير مرتبط بشركة", 403);
 
     if (myRole === "manager") {
       if (!["supervisor", "employee", "viewer"].includes(role)) {
@@ -142,12 +192,13 @@ Deno.serve(async (req: Request) => {
         email,
         full_name: fullName,
         role,
+        company_id: me.company_id,
         department_id: departmentId,
         job_title: jobTitle,
         invited_by: me.id,
         accepted_at: null,
       },
-      { onConflict: "email" },
+      { onConflict: "company_id,email" },
     );
     if (invError) return fail("تعذّر تجهيز بيانات الموظف", 500);
 
@@ -155,10 +206,10 @@ Deno.serve(async (req: Request) => {
       email,
       password: body.password,
       email_confirm: true,
-      user_metadata: { full_name: fullName },
+      user_metadata: { full_name: fullName, company_id: me.company_id },
     });
     if (error || !data.user) {
-      await admin.from("invitations").delete().eq("email", email).is("accepted_at", null);
+      await admin.from("invitations").delete().eq("email", email).eq("company_id", me.company_id).is("accepted_at", null);
       return fail(friendlyAuthError(error?.message ?? ""));
     }
     return reply(200, { ok: true, user_id: data.user.id });
@@ -170,15 +221,17 @@ Deno.serve(async (req: Request) => {
     if (!passwordOk(body.password)) return fail("كلمة المرور يجب أن تكون 8 أحرف على الأقل");
     const { data: target } = await admin
       .from("profiles")
-      .select("id, role, department_id")
+      .select("id, role, department_id, company_id")
       .eq("id", userId)
       .single();
     if (!target) return fail("الموظف غير موجود", 404);
     const allowed =
-      myRole === "admin" ||
+      myRole === "developer" ||
       target.id === me.id ||
+      (myRole === "admin" && target.company_id === me.company_id) ||
       (myRole === "manager" &&
-        me.department_id &&
+        !!me.department_id &&
+        target.company_id === me.company_id &&
         target.department_id === me.department_id &&
         ["supervisor", "employee", "viewer"].includes(target.role));
     if (!allowed) return fail("غير مصرح لك بتغيير كلمة مرور هذا الحساب", 403);

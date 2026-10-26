@@ -32,6 +32,16 @@ const DOCK: NavItem[] = [
   { href: "/more", label: "المزيد", icon: "grid" },
 ];
 
+const DEV_NAV: NavItem[] = [
+  { href: "/companies", label: "الشركات", icon: "layers" },
+  { href: "/settings", label: "الإعدادات", icon: "settings" },
+];
+
+const DEV_DOCK: NavItem[] = [
+  { href: "/companies", label: "الشركات", icon: "layers" },
+  { href: "/settings", label: "الإعدادات", icon: "settings" },
+];
+
 const MORE_PATHS = ["/more", "/departments", "/reports", "/notifications", "/settings"];
 
 function isActive(pathname: string, href: string) {
@@ -52,8 +62,9 @@ function useUnread() {
 function DesktopShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { profile, settings, signOut } = useSession();
+  const { profile, company, signOut } = useSession();
   const unread = useUnread();
+  const items = profile?.role === "developer" ? DEV_NAV : NAV;
   return (
     <View style={{ flex: 1, flexDirection: "row", backgroundColor: C.background }}>
       <View
@@ -70,14 +81,14 @@ function DesktopShell({ children }: { children: React.ReactNode }) {
         <View style={{ paddingHorizontal: 8, gap: 2 }}>
           <Wordmark size={22} />
           <T className="text-[12px] text-muted" numberOfLines={1}>
-            {settings?.company_name ?? ""}
+            {profile?.role === "developer" ? "إدارة المنصة" : company?.name ?? ""}
           </T>
         </View>
         <View style={{ marginTop: 18 }}>
           <TimerChip />
         </View>
         <View style={{ marginTop: 14, gap: 2, flex: 1 }}>
-          {NAV.map((item) => {
+          {items.map((item) => {
             const active = isActive(pathname, item.href);
             return (
               <Pressable
@@ -130,8 +141,10 @@ function MobileShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { settings } = useSession();
+  const { profile, company } = useSession();
   const unread = useUnread();
+  const dev = profile?.role === "developer";
+  const dock = dev ? DEV_DOCK : DOCK;
   return (
     <View style={{ flex: 1, backgroundColor: C.background }}>
       <View
@@ -151,7 +164,7 @@ function MobileShell({ children }: { children: React.ReactNode }) {
             مدار
           </T>
           <T className="text-[11px] text-muted" numberOfLines={1} style={{ lineHeight: 15 }}>
-            {settings?.company_name ?? ""}
+            {dev ? "إدارة المنصة" : company?.name ?? ""}
           </T>
         </View>
         <IconButton icon="bell" label="الإشعارات" badge={unread} onPress={() => router.push("/notifications" as any)} />
@@ -170,7 +183,7 @@ function MobileShell({ children }: { children: React.ReactNode }) {
           paddingTop: 6,
         }}
       >
-        {DOCK.map((item) => {
+        {dock.map((item) => {
           const active = isActive(pathname, item.href);
           return (
             <Pressable

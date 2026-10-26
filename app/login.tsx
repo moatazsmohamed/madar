@@ -19,17 +19,17 @@ export default function LoginScreen() {
     queryFn: async () => {
       const { data, error } = await supabase.rpc("workspace_status");
       if (error) throw error;
-      return data as { has_admin: boolean; company_name: string };
+      return data as { has_developer: boolean; companies: number };
     },
   });
   const [mode, setMode] = useState<Mode>("login");
 
   useEffect(() => {
-    if (status.data && !status.data.has_admin) setMode("setup");
+    if (status.data && !status.data.has_developer) setMode("setup");
   }, [status.data]);
 
   if (!ready) return <Loading />;
-  if (session && profile) return <Redirect href="/dashboard" />;
+  if (session && profile) return <Redirect href={profile.role === "developer" ? "/companies" : "/dashboard"} />;
 
   const form = (
     <View style={{ width: "100%", maxWidth: 420, alignSelf: "center", gap: 18 }}>
@@ -43,9 +43,9 @@ export default function LoginScreen() {
       ) : mode === "setup" ? (
         <SetupForm onDone={() => status.refetch()} />
       ) : mode === "register" ? (
-        <RegisterForm companyName={status.data?.company_name} onBack={() => setMode("login")} />
+        <RegisterForm onBack={() => setMode("login")} />
       ) : (
-        <LoginForm companyName={status.data?.company_name} onRegister={() => setMode("register")} />
+        <LoginForm onRegister={() => setMode("register")} />
       )}
       {status.error ? <ErrorBox message={errorMessage(status.error)} /> : null}
     </View>
@@ -134,7 +134,7 @@ function PasswordInput({ value, onChangeText, placeholder, onSubmit }: { value: 
   );
 }
 
-function LoginForm({ companyName, onRegister }: { companyName?: string; onRegister: () => void }) {
+function LoginForm({ onRegister }: { onRegister: () => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -154,7 +154,7 @@ function LoginForm({ companyName, onRegister }: { companyName?: string; onRegist
 
   return (
     <>
-      <Heading title="تسجيل الدخول" subtitle={companyName ? `مساحة عمل ${companyName}` : "ادخل إلى مساحة عمل فريقك"} />
+      <Heading title="تسجيل الدخول" subtitle="ادخل إلى حسابك في مدار" />
       <Field label="البريد الإلكتروني">
         <Input value={email} onChangeText={setEmail} placeholder="name@company.com" autoCapitalize="none" keyboardType="email-address" autoComplete="email" style={{ textAlign: "left", writingDirection: "ltr" }} />
       </Field>
@@ -176,7 +176,8 @@ function LoginForm({ companyName, onRegister }: { companyName?: string; onRegist
   );
 }
 
-function RegisterForm({ companyName, onBack }: { companyName?: string; onBack: () => void }) {
+function RegisterForm({ onBack }: { onBack: () => void }) {
+  const [company, setCompany] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -185,13 +186,20 @@ function RegisterForm({ companyName, onBack }: { companyName?: string; onBack: (
 
   const submit = async () => {
     setError(null);
+    if (!company.trim()) return setError("أدخل اسم الشركة");
     if (!name.trim()) return setError("أدخل اسمك الكامل");
     if (!email.trim()) return setError("أدخل بريدك الإلكتروني");
     if (password.length < 8) return setError("كلمة المرور يجب أن تكون 8 أحرف على الأقل");
     setBusy(true);
     try {
       const normalized = email.trim().toLowerCase();
-      await callAccounts({ action: "register", email: normalized, password, full_name: name.trim() });
+      await callAccounts({
+        action: "register",
+        email: normalized,
+        password,
+        full_name: name.trim(),
+        company_name: company.trim(),
+      });
       const { error: err } = await supabase.auth.signInWithPassword({ email: normalized, password });
       if (err) throw err;
     } catch (e) {
@@ -203,8 +211,11 @@ function RegisterForm({ companyName, onBack }: { companyName?: string; onBack: (
 
   return (
     <>
-      <Heading title="طلب الانضمام" subtitle={companyName ? `إلى مساحة عمل ${companyName}` : undefined} />
-      <InfoBox>إذا أضافك المدير مسبقًا بهذا البريد سيُفعّل حسابك فورًا، وإلا سيبقى بانتظار موافقة مدير النظام.</InfoBox>
+      <Heading title="طلب الانضمام" subtitle="انضم إلى شركتك في مدار" />
+      <InfoBox>إذا أضافك مدير الشركة مسبقًا بهذا البريد سيُفعّل حسابك فورًا، وإلا سيبقى بانتظار موافقة مدير النظام.</InfoBox>
+      <Field label="اسم الشركة" required>
+        <Input value={company} onChangeText={setCompany} placeholder="اكتب اسم الشركة كما سجّله مديرها" />
+      </Field>
       <Field label="الاسم الكامل" required>
         <Input value={name} onChangeText={setName} placeholder="مثال: سارة أحمد" />
       </Field>
@@ -226,7 +237,6 @@ function RegisterForm({ companyName, onBack }: { companyName?: string; onBack: (
 }
 
 function SetupForm({ onDone }: { onDone: () => void }) {
-  const [company, setCompany] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -235,14 +245,13 @@ function SetupForm({ onDone }: { onDone: () => void }) {
 
   const submit = async () => {
     setError(null);
-    if (!company.trim()) return setError("أدخل اسم الشركة");
     if (!name.trim()) return setError("أدخل اسمك");
     if (!email.trim()) return setError("أدخل بريدك الإلكتروني");
     if (password.length < 8) return setError("كلمة المرور يجب أن تكون 8 أحرف على الأقل");
     setBusy(true);
     try {
       const normalized = email.trim().toLowerCase();
-      await callAccounts({ action: "setup", email: normalized, password, full_name: name.trim(), company_name: company.trim() });
+      await callAccounts({ action: "setup", email: normalized, password, full_name: name.trim() });
       const { error: err } = await supabase.auth.signInWithPassword({ email: normalized, password });
       if (err) throw err;
       onDone();
@@ -261,21 +270,18 @@ function SetupForm({ onDone }: { onDone: () => void }) {
           الخطوة الأولى
         </T>
       </View>
-      <Heading title="إعداد مساحة العمل" subtitle="أنشئ حساب مدير النظام. ستضيف بعدها الأقسام والموظفين من داخل التطبيق." />
-      <Field label="اسم الشركة" required>
-        <Input value={company} onChangeText={setCompany} placeholder="مثال: شركة النور للتجارة" />
-      </Field>
+      <Heading title="إعداد حساب المطور" subtitle="الحساب الأم للنظام. منه تضيف الشركات وتفتح لكل شركة مدير نظام خاص بها." />
       <Field label="اسمك" required>
         <Input value={name} onChangeText={setName} placeholder="الاسم الكامل" />
       </Field>
       <Field label="البريد الإلكتروني" required>
-        <Input value={email} onChangeText={setEmail} placeholder="admin@company.com" autoCapitalize="none" keyboardType="email-address" style={{ textAlign: "left", writingDirection: "ltr" }} />
+        <Input value={email} onChangeText={setEmail} placeholder="developer@example.com" autoCapitalize="none" keyboardType="email-address" style={{ textAlign: "left", writingDirection: "ltr" }} />
       </Field>
       <Field label="كلمة المرور" hint="8 أحرف على الأقل" required>
         <PasswordInput value={password} onChangeText={setPassword} onSubmit={submit} />
       </Field>
       <ErrorBox message={error} />
-      <Button title="إنشاء مساحة العمل" size="lg" icon="arrow-left" onPress={submit} loading={busy} full />
+      <Button title="إنشاء حساب المطور" size="lg" icon="arrow-left" onPress={submit} loading={busy} full />
     </>
   );
 }

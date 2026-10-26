@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { setCompanyTimezone } from "./format";
-import type { CompanySettings, Profile } from "./types";
+import type { Company, Profile } from "./types";
 
 type SessionValue = {
   ready: boolean;
@@ -11,7 +11,8 @@ type SessionValue = {
   userId: string | null;
   profile: Profile | null;
   profileLoading: boolean;
-  settings: CompanySettings | null;
+  company: Company | null;
+  isDeveloper: boolean;
   refreshProfile: () => Promise<unknown>;
   signOut: () => Promise<void>;
 };
@@ -55,20 +56,23 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   });
 
   const profile = profileQuery.data ?? null;
+  const companyId = profile?.company_id ?? null;
 
-  const settingsQuery = useQuery({
-    queryKey: ["settings"],
-    enabled: profile?.status === "active",
+  const companyQuery = useQuery({
+    queryKey: ["company", companyId],
+    enabled: !!companyId,
     queryFn: async () => {
-      const { data, error } = await supabase.from("company_settings").select("*").eq("id", 1).maybeSingle();
+      const { data, error } = await supabase.from("companies").select("*").eq("id", companyId!).maybeSingle();
       if (error) throw error;
-      return data as CompanySettings | null;
+      return (data as Company | null) ?? null;
     },
   });
 
-  const settings = settingsQuery.data ?? null;
+  const company = companyQuery.data ?? null;
   // Keep formatters in sync with the company timezone before children render.
-  if (settings?.timezone) setCompanyTimezone(settings.timezone);
+  if (company?.timezone) setCompanyTimezone(company.timezone);
+
+  const isDeveloper = profile?.role === "developer";
 
   const value = useMemo<SessionValue>(
     () => ({
@@ -77,14 +81,15 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       userId,
       profile,
       profileLoading: !!userId && profileQuery.isLoading,
-      settings,
+      company,
+      isDeveloper,
       refreshProfile: () => profileQuery.refetch(),
       signOut: async () => {
         await supabase.auth.signOut();
         queryClient.clear();
       },
     }),
-    [ready, session, userId, profile, profileQuery, settings, queryClient],
+    [ready, session, userId, profile, profileQuery, company, isDeveloper, queryClient],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

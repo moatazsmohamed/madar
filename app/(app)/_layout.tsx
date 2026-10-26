@@ -1,4 +1,4 @@
-import { Redirect, Stack } from "expo-router";
+import { Redirect, Stack, usePathname } from "expo-router";
 import { View } from "react-native";
 import { OrbitDecor, Wordmark } from "@/components/madar/logo";
 import { AppShell } from "@/components/madar/shell";
@@ -7,6 +7,7 @@ import { useSession } from "@/lib/madar/session";
 
 export default function AppLayout() {
   const { ready, session, profile, profileLoading, signOut, refreshProfile } = useSession();
+  const pathname = usePathname();
 
   if (!ready || profileLoading) return <Loading />;
   if (!session) return <Redirect href="/login" />;
@@ -33,6 +34,11 @@ export default function AppLayout() {
         </View>
       </View>
     );
+  }
+
+  if (profile.role === "developer") {
+    const allowed = pathname === "/companies" || pathname.startsWith("/settings");
+    if (!allowed) return <Redirect href="/companies" />;
   }
 
   return (

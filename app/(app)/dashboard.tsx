@@ -15,7 +15,7 @@ import type { Task } from "@/lib/madar/types";
 
 export default function Dashboard() {
   const me = useMe();
-  const { settings } = useSession();
+  const { company } = useSession();
   const router = useRouter();
   const wide = useIsWide();
   const tasksQuery = useTasks();
@@ -66,7 +66,7 @@ export default function Dashboard() {
   return (
     <Page
       title={`${greeting()}، ${firstName}`}
-      subtitle={`${fmtTodayHeading()} · ${settings?.company_name ?? ""}`}
+      subtitle={`${fmtTodayHeading()} · ${company?.name ?? ""}`}
       actions={canCreateTask(me) ? <Button title="مهمة جديدة" icon="plus" onPress={() => setCreating(true)} /> : null}
     >
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 18 }}>

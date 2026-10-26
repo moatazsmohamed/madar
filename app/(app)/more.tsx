@@ -9,7 +9,7 @@ import { useMe, useSession } from "@/lib/madar/session";
 export default function MoreScreen() {
   const me = useMe();
   const router = useRouter();
-  const { signOut, settings } = useSession();
+  const { signOut, company } = useSession();
   const unread = (useNotifications().data ?? []).filter((n) => !n.read_at).length;
   const items: { href: string; label: string; hint: string; icon: IconName; badge?: number }[] = [
     { href: "/notifications", label: "الإشعارات", hint: "الإسنادات والمراجعات والتعليقات", icon: "bell", badge: unread },
@@ -29,7 +29,7 @@ export default function MoreScreen() {
             {me.full_name}
           </T>
           <T style={{ color: "#C9D6CF", fontSize: 12.5 }}>
-            {ROLE_LABELS[me.role]} · {settings?.company_name ?? ""}
+            {ROLE_LABELS[me.role]} · {company?.name ?? ""}
           </T>
         </View>
         <Icon name="chevron-left" color="#C9D6CF" />

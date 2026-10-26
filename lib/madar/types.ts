@@ -1,13 +1,15 @@
-export type Role = "admin" | "manager" | "supervisor" | "employee" | "viewer";
+export type Role = "developer" | "admin" | "manager" | "supervisor" | "employee" | "viewer";
 export type MemberStatus = "pending" | "active" | "disabled";
 export type TaskStatus = "todo" | "in_progress" | "review" | "done" | "blocked";
 export type Priority = "low" | "medium" | "high" | "urgent";
 export type ProjectStatus = "planning" | "active" | "on_hold" | "completed" | "archived";
 
-export interface CompanySettings {
-  id: number;
-  company_name: string;
+export interface Company {
+  id: string;
+  name: string;
   timezone: string;
+  status: "active" | "suspended";
+  created_at: string;
   updated_at: string;
 }
 
@@ -29,6 +31,7 @@ export interface Profile {
   role: Role;
   status: MemberStatus;
   department_id: string | null;
+  company_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -39,6 +42,7 @@ export interface Invitation {
   full_name: string | null;
   role: Role;
   department_id: string | null;
+  company_id: string;
   job_title: string | null;
   invited_by: string | null;
   accepted_at: string | null;

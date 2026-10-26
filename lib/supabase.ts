@@ -7,9 +7,9 @@ import { Platform } from "react-native";
 const extra = (Constants.expoConfig?.extra ?? {}) as { supabaseUrl?: string; supabaseKey?: string };
 
 export const SUPABASE_URL =
-  process.env.EXPO_PUBLIC_SUPABASE_URL || extra.supabaseUrl || "https://nuotqfpkoffuwkoqdtte.supabase.co";
+  process.env.EXPO_PUBLIC_SUPABASE_URL || extra.supabaseUrl || "https://ppihzxabbysozbdmweje.supabase.co";
 export const SUPABASE_KEY =
-  process.env.EXPO_PUBLIC_SUPABASE_KEY || extra.supabaseKey || "sb_publishable_aFV-vjtaksRROqsw5sk4kQ_wZZ9y-sb";
+  process.env.EXPO_PUBLIC_SUPABASE_KEY || extra.supabaseKey || "sb_publishable_7Re-MNRopMsOjopgV2YNjg_fN0yUDiL";
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
