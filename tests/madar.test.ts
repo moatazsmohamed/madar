@@ -18,7 +18,7 @@ import {
   timeInTz,
   zonedToUtc,
 } from "@/lib/madar/format";
-import { assignableRoles, canCreateTask, canDeleteTask, canManageTask, canReviewTask, canTrackTime, canWorkOnTask, isMonthLocked, isSelfOwned } from "@/lib/madar/permissions";
+import { assignableRoles, canCreateTask, canDeleteTask, canManageTask, canReviewTask, canTrackTime, canWorkOnTask, isMonthLocked, isSelfOwned, isTaskDayClosed } from "@/lib/madar/permissions";
 import type { CompanyMonth, Profile, Task } from "@/lib/madar/types";
 
 const profile = (over: Partial<Profile>): Profile =>
@@ -60,6 +60,7 @@ const task = (over: Partial<Task>): Task =>
     reviewer_id: null,
     due_date: null,
     start_date: null,
+    day: "2026-10-25",
     task_assignees: [],
     month_id: "m1",
     month: openMonth,
@@ -189,6 +190,13 @@ describe("permission mirrors", () => {
     expect(canWorkOnTask(employee, closed)).toBe(false);
     expect(canTrackTime(admin, closed)).toBe(false);
     expect(canDeleteTask(admin, closed)).toBe(false);
+  });
+
+  it("archives past days but trusts the live day status when given", () => {
+    expect(isTaskDayClosed(task({ day: "2000-01-01" }))).toBe(true);
+    expect(isTaskDayClosed(task({ day: "2999-01-01" }))).toBe(false);
+    expect(isTaskDayClosed(task({ day: "2000-01-01" }), "open")).toBe(false);
+    expect(isTaskDayClosed(task({ day: "2999-01-01" }), "closed")).toBe(true);
   });
 
   it("keeps viewers and disabled accounts read-only", () => {

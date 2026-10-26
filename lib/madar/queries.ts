@@ -7,6 +7,7 @@ import type {
   Attachment,
   Comment,
   Company,
+  CompanyDay,
   CompanyJoinInfo,
   CompanyMonth,
   Department,
@@ -81,18 +82,34 @@ export function useTask(id: string | undefined) {
   });
 }
 
-/** Opens the current month if needed (closing past months) and lists archived periods. */
+/** Opens today's day (and the current month), closing past days automatically. */
 export function useMonths() {
   return useQuery({
     queryKey: ["months"],
     queryFn: async () => {
-      const { error } = await supabase.rpc("ensure_month");
+      const { error } = await supabase.rpc("ensure_day");
       if (error) throw error;
       return run<CompanyMonth[]>(
         supabase.from("company_months").select("*").order("period", { ascending: false }).limit(120),
       );
     },
     staleTime: 60_000,
+  });
+}
+
+/** Day-by-day archive for the company. Opening the app opens today's day. */
+export function useDays() {
+  return useQuery({
+    queryKey: ["days"],
+    queryFn: async () => {
+      const { error } = await supabase.rpc("ensure_day");
+      if (error) throw error;
+      return run<CompanyDay[]>(
+        supabase.from("company_days").select("*").order("day", { ascending: false }).limit(500),
+      );
+    },
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   });
 }
 
@@ -286,7 +303,7 @@ function useAction<TVars, TResult = unknown>(fn: (vars: TVars) => Promise<TResul
   });
 }
 
-const TASK_KEYS: QueryKey[] = [["tasks"], ["task"], ["activity"], ["task-activity"], ["notifications"], ["months"]];
+const TASK_KEYS: QueryKey[] = [["tasks"], ["task"], ["activity"], ["task-activity"], ["notifications"], ["months"], ["days"]];
 
 export function useSaveTask() {
   return useAction(
@@ -343,7 +360,19 @@ export function useCloseMonth() {
       if (error) throw error;
       return data as CompanyMonth;
     },
-    [["months"], ["tasks"], ["task"], ["time-totals"], ["open-session"], ["task-sessions"], ["sessions"], ["activity"]],
+    [["months"], ["days"], ["tasks"], ["task"], ["time-totals"], ["open-session"], ["task-sessions"], ["sessions"], ["activity"]],
+  );
+}
+
+/** Early close of today (company admin). Unfinished work stays archived as late. */
+export function useCloseDay() {
+  return useAction(
+    async (day: string) => {
+      const { data, error } = await supabase.rpc("close_day", { p_day: day });
+      if (error) throw error;
+      return data as CompanyDay;
+    },
+    [["days"], ["months"], ["tasks"], ["task"], ["time-totals"], ["open-session"], ["task-sessions"], ["sessions"], ["activity"]],
   );
 }
 

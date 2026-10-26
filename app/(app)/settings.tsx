@@ -223,6 +223,7 @@ function ImportCard() {
       const est = get("estimate");
       const estimate = est ? Math.round(Number(est) * 60) : null;
       if (est && Number.isNaN(Number(est))) errors.push("الوقت المقدّر بالساعات رقمًا");
+      const importDay = due && due.slice(0, 7) === todayISO().slice(0, 7) ? due : null;
       return {
         line: idx + 2,
         title,
@@ -234,6 +235,7 @@ function ImportCard() {
           priority: (priority ?? "medium") as Priority,
           due_date: due || null,
           start_date: start || null,
+          day: importDay,
           project_id: project?.id ?? null,
           department_id: admin ? project?.department_id ?? (assignees.map((id) => profiles.find((p) => p.id === id)?.department_id).find(Boolean) ?? null) : me.department_id,
           status: "todo",

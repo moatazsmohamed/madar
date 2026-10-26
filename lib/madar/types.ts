@@ -68,6 +68,18 @@ export interface CompanyMonth {
   summary: MonthSummary | null;
 }
 
+export interface CompanyDay {
+  id: string;
+  company_id: string;
+  month_id: string;
+  day: string;
+  status: "open" | "closed";
+  closed_at: string | null;
+  closed_by: string | null;
+  close_mode: "auto" | "manual" | "month" | null;
+  created_at: string;
+}
+
 export interface Profile {
   id: string;
   email: string;
@@ -130,6 +142,7 @@ export interface Task {
   created_at: string;
   updated_at: string;
   month_id: string;
+  day: string;
   month?: CompanyMonth | null;
   task_assignees?: { user_id: string }[];
 }
@@ -212,4 +225,5 @@ export type TaskInput = {
   due_date: string | null;
   estimate_minutes: number | null;
   reviewer_id: string | null;
+  day: string | null;
 };

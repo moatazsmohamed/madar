@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
-import { fmtDay, isOverdue, todayISO } from "@/lib/madar/format";
+import { fmtDay, fmtDayFull, isOverdue, todayISO } from "@/lib/madar/format";
 import {
   PRIORITY_LABELS,
   PRIORITY_ORDER,
@@ -10,7 +10,7 @@ import {
   STATUS_ORDER,
   STATUS_TONE,
 } from "@/lib/madar/labels";
-import { canCreateTask, canEditTaskDetails, canManageTask, canReviewTask, canWorkOnTask, isAdmin, isAssignee, isMonthLocked, isSelfOwned } from "@/lib/madar/permissions";
+import { canCreateTask, canEditTaskDetails, canManageTask, canReviewTask, canWorkOnTask, isAdmin, isAssignee, isMonthLocked, isSelfOwned, isTaskDayClosed } from "@/lib/madar/permissions";
 import { useLookups, useSaveTask, useSetTaskStatus } from "@/lib/madar/queries";
 import { useMe } from "@/lib/madar/session";
 import type { Priority, Task, TaskInput, TaskStatus } from "@/lib/madar/types";
@@ -58,6 +58,24 @@ export function DueLabel({ task, compact }: { task: Task; compact?: boolean }) {
   );
 }
 
+/** The day a task belongs to, with the late marker once that day is archived. */
+export function DayLabel({ task }: { task: Task }) {
+  if (!task.day) return null;
+  const today = todayISO();
+  const late = task.day < today && task.status !== "done";
+  const isToday = task.day === today && task.status !== "done";
+  const color = late ? C.error : isToday ? C.warning : C.muted;
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+      <Icon name={late ? "alert-circle" : "clock"} size={12} color={color} />
+      <T weight={late || isToday ? "semibold" : "regular"} style={{ fontSize: 12, color }}>
+        {isToday ? "اليوم" : fmtDay(task.day)}
+        {late ? " · متأخرة" : ""}
+      </T>
+    </View>
+  );
+}
+
 export function useTaskPeople(task: Task) {
   const { profileMap } = useLookups();
   return (task.task_assignees ?? [])
@@ -72,8 +90,11 @@ export function Assignees({ task, size = 24 }: { task: Task; size?: number }) {
 }
 
 /** Status transitions the current member is allowed to make (mirrors the tasks_before_write trigger). */
-export function allowedTransitions(me: ReturnType<typeof useMe>, task: Task): TaskStatus[] {
+export function allowedTransitions(me: ReturnType<typeof useMe>, task: Task, dayClosed = false): TaskStatus[] {
   if (!me || me.status !== "active" || isMonthLocked(task)) return [];
+  if (dayClosed) {
+    return task.status === "review" && canReviewTask(me, task) ? ["done", "in_progress"] : [];
+  }
   if (canManageTask(me, task)) return STATUS_ORDER.filter((s) => s !== task.status);
   if (canReviewTask(me, task)) return task.status === "review" ? ["done", "in_progress"] : [];
   if (canWorkOnTask(me, task) && isAssignee(me, task)) {
@@ -83,13 +104,55 @@ export function allowedTransitions(me: ReturnType<typeof useMe>, task: Task): Ta
   return [];
 }
 
-export function StatusMenu({ task, trigger }: { task: Task; trigger?: (open: () => void) => React.ReactNode }) {
+/** One-tap finish: sends the task to review, or closes it when it has no reviewer. */
+export function FinishButton({
+  task,
+  dayClosed,
+  size = "sm",
+  full,
+}: {
+  task: Task;
+  dayClosed?: boolean;
+  size?: "sm" | "md";
+  full?: boolean;
+}) {
+  const me = useMe();
+  const setStatus = useSetTaskStatus();
+  const toast = useToast();
+  const locked = isMonthLocked(task) || !!dayClosed;
+  const self = isSelfOwned(me, task);
+  const canFinish = !!me && me.status === "active" && me.role !== "viewer" && canWorkOnTask(me, task) && task.status !== "done" && task.status !== "review";
+  if (!canFinish) return null;
+  const target: TaskStatus = self ? "done" : "review";
+  return (
+    <Button
+      title={locked ? "أُغلق" : "إنهاء"}
+      icon={locked ? "lock" : "check-circle"}
+      size={size}
+      full={full}
+      variant={locked ? "ghost" : "soft"}
+      disabled={locked}
+      loading={setStatus.isPending}
+      onPress={() =>
+        setStatus.mutate(
+          { id: task.id, status: target },
+          {
+            onSuccess: () => toast.show(self ? "أُغلقت المهمة" : "أُرسلت المهمة للمراجعة"),
+            onError: (e) => toast.show(errorMessage(e), "error"),
+          },
+        )
+      }
+    />
+  );
+}
+
+export function StatusMenu({ task, trigger, dayClosed }: { task: Task; trigger?: (open: () => void) => React.ReactNode; dayClosed?: boolean }) {
   const me = useMe();
   const [open, setOpen] = useState(false);
   const setStatus = useSetTaskStatus();
   const toast = useToast();
-  const options = allowedTransitions(me, task);
-  const locked = isMonthLocked(task);
+  const options = allowedTransitions(me, task, dayClosed);
+  const locked = isMonthLocked(task) || !!dayClosed;
   const opener = () => setOpen(true);
   return (
     <>
@@ -130,7 +193,9 @@ export function StatusMenu({ task, trigger }: { task: Task; trigger?: (open: () 
           {options.length === 0 ? (
             <T className="text-muted">
               {locked
-                ? "هذا الشهر مؤرشف؛ الحالة محفوظة للعرض فقط."
+                ? dayClosed
+                  ? "هذا اليوم مغلق ومؤرشف؛ الحالة محفوظة للعرض فقط."
+                  : "هذا الشهر مؤرشف؛ الحالة محفوظة للعرض فقط."
                 : me.role === "viewer"
                   ? "حساب المشاهدة للاطلاع فقط."
                   : "لا تملك صلاحية تغيير حالة هذه المهمة."}
@@ -144,7 +209,7 @@ export function StatusMenu({ task, trigger }: { task: Task; trigger?: (open: () 
 
 // ---------------------------------------------------------------- form
 
-type Defaults = Partial<Pick<TaskInput, "project_id" | "status" | "due_date" | "start_date">> & { assignees?: string[] };
+type Defaults = Partial<Pick<TaskInput, "project_id" | "status" | "due_date" | "start_date" | "day">> & { assignees?: string[] };
 
 export function TaskForm({
   visible,
@@ -176,6 +241,7 @@ export function TaskForm({
       priority: task?.priority ?? ("medium" as Priority),
       start_date: task?.start_date ?? defaults?.start_date ?? null,
       due_date: task?.due_date ?? defaults?.due_date ?? null,
+      day: task?.day ?? defaults?.day ?? todayISO(),
       estimateHours: task?.estimate_minutes ? String(Math.floor(task.estimate_minutes / 60)) : "",
       estimateMinutes: task?.estimate_minutes ? String(task.estimate_minutes % 60) : "",
       reviewer_id: task?.reviewer_id ?? null,
@@ -219,7 +285,10 @@ export function TaskForm({
   const submit = () => {
     setError(null);
     if (!form.title.trim()) return setError("اكتب عنوان المهمة");
+    if (!form.day) return setError("اختر يوم التنفيذ");
     if (form.start_date && form.due_date && form.due_date < form.start_date) return setError("تاريخ الاستحقاق يجب أن يكون بعد تاريخ البدء");
+    if (form.start_date && form.start_date > form.day) return setError("تاريخ البدء يجب أن يكون قبل يوم التنفيذ أو في نفس اليوم");
+    if (form.due_date && form.due_date < form.day) return setError("تاريخ الاستحقاق يجب أن يكون بعد يوم التنفيذ أو في نفس اليوم");
     const h = Number(form.estimateHours || 0);
     const m = Number(form.estimateMinutes || 0);
     if (Number.isNaN(h) || Number.isNaN(m) || h < 0 || m < 0) return setError("الوقت المقدّر غير صحيح");
@@ -240,6 +309,7 @@ export function TaskForm({
       due_date: form.due_date,
       estimate_minutes: estimate,
       reviewer_id: form.reviewer_id,
+      day: form.day,
     };
     let input: Partial<TaskInput> = full;
     if (task) {
@@ -342,6 +412,15 @@ export function TaskForm({
         </View>
       </View>
       <View style={{ flexDirection: "row", gap: 12, flexWrap: "wrap" }}>
+        <View style={{ flex: 1, minWidth: 180 }}>
+          <Field label="يوم التنفيذ" hint={admin ? "تُقفل مهام اليوم تلقائيًا مع نهاية اليوم" : "نقل المهام بين الأيام من صلاحيات مدير الشركة"}>
+            {admin ? (
+              <DateField value={form.day} onChange={(v) => set("day", v ?? todayISO())} />
+            ) : (
+              <T style={{ paddingVertical: 11 }}>{form.day ? fmtDayFull(form.day) : "—"}</T>
+            )}
+          </Field>
+        </View>
         <View style={{ flex: 1, minWidth: 180 }}>
           <Field label="تاريخ البدء">
             <DateField value={form.start_date} onChange={(v) => set("start_date", v)} />

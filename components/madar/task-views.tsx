@@ -17,10 +17,10 @@ import {
 import { STATUS_LABELS, STATUS_ORDER, STATUS_TONE } from "@/lib/madar/labels";
 import { useLookups } from "@/lib/madar/queries";
 import type { Task } from "@/lib/madar/types";
-import { Assignees, DueLabel, PriorityPill, StatusMenu } from "./tasks";
+import { Assignees, DayLabel, DueLabel, FinishButton, PriorityPill, StatusMenu } from "./tasks";
 import { C, EmptyState, Icon, IconButton, T, Tap, toneColor, useIsWide, insetStart } from "./ui";
 
-type ViewProps = { tasks: Task[]; minutes: Map<string, number>; empty?: React.ReactNode };
+type ViewProps = { tasks: Task[]; minutes: Map<string, number>; empty?: React.ReactNode; closedDays?: Set<string> };
 
 function useOpenTask() {
   const router = useRouter();
@@ -43,7 +43,7 @@ function ProjectTag({ projectId }: { projectId: string | null }) {
 
 // ---------------------------------------------------------------- table / list
 
-export function TaskTable({ tasks, minutes, empty }: ViewProps) {
+export function TaskTable({ tasks, minutes, empty, closedDays }: ViewProps) {
   const wide = useIsWide(980);
   const open = useOpenTask();
   if (tasks.length === 0) return <>{empty ?? <EmptyState icon="check-square" title="لا توجد مهام مطابقة" />}</>;
@@ -51,7 +51,7 @@ export function TaskTable({ tasks, minutes, empty }: ViewProps) {
     return (
       <View style={{ gap: 10 }}>
         {tasks.map((t) => (
-          <TaskCard key={t.id} task={t} minutes={minutes.get(t.id)} onPress={() => open(t)} />
+          <TaskCard key={t.id} task={t} minutes={minutes.get(t.id)} onPress={() => open(t)} dayClosed={closedDays?.has(t.day)} />
         ))}
       </View>
     );
@@ -73,6 +73,7 @@ export function TaskTable({ tasks, minutes, empty }: ViewProps) {
         {head("الأولوية", 0, 88)}
         {head("الاستحقاق", 0, 116)}
         {head("الوقت الفعلي", 0, 92)}
+        {head("الإجراء", 0, 84)}
       </View>
       {tasks.map((t, i) => (
         <Tap
@@ -92,17 +93,20 @@ export function TaskTable({ tasks, minutes, empty }: ViewProps) {
           <T className="text-[12px] text-muted" style={{ width: 44, fontVariant: ["tabular-nums"] }}>
             {t.number}
           </T>
-          <View style={{ flex: 3, gap: 2 }}>
+          <View style={{ flex: 3, gap: 3 }}>
             <T weight="semibold" numberOfLines={1} style={{ textDecorationLine: t.status === "done" ? "line-through" : "none", color: t.status === "done" ? C.muted : C.foreground }}>
               {t.title}
             </T>
-            <ProjectTag projectId={t.project_id} />
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <ProjectTag projectId={t.project_id} />
+              <DayLabel task={t} />
+            </View>
           </View>
           <View style={{ width: 96 }}>
             <Assignees task={t} />
           </View>
           <View style={{ width: 132 }}>
-            <StatusMenu task={t} />
+            <StatusMenu task={t} dayClosed={closedDays?.has(t.day)} />
           </View>
           <View style={{ width: 88 }}>
             <PriorityPill priority={t.priority} />
@@ -116,13 +120,16 @@ export function TaskTable({ tasks, minutes, empty }: ViewProps) {
               {t.estimate_minutes ? <T className="text-[11px] text-muted"> / {fmtMinutes(t.estimate_minutes)}</T> : null}
             </T>
           </View>
+          <View style={{ width: 84 }}>
+            <FinishButton task={t} dayClosed={closedDays?.has(t.day)} />
+          </View>
         </Tap>
       ))}
     </View>
   );
 }
 
-export function TaskCard({ task, minutes, onPress, compact }: { task: Task; minutes?: number; onPress: () => void; compact?: boolean }) {
+export function TaskCard({ task, minutes, onPress, compact, dayClosed }: { task: Task; minutes?: number; onPress: () => void; compact?: boolean; dayClosed?: boolean }) {
   const overdue = isOverdue(task);
   return (
     <Tap
@@ -144,18 +151,21 @@ export function TaskCard({ task, minutes, onPress, compact }: { task: Task; minu
       </View>
       <ProjectTag projectId={task.project_id} />
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        {!compact ? <StatusMenu task={task} /> : null}
+        {!compact ? <StatusMenu task={task} dayClosed={dayClosed} /> : null}
         <PriorityPill priority={task.priority} />
+        <DayLabel task={task} />
         <DueLabel task={task} compact />
       </View>
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         <Assignees task={task} />
+        <View style={{ flex: 1 }} />
         {minutes ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
             <Icon name="clock" size={12} color={C.muted} />
             <T className="text-[12px] text-muted">{fmtMinutes(minutes)}</T>
           </View>
         ) : null}
+        <FinishButton task={task} dayClosed={dayClosed} />
       </View>
     </Tap>
   );
@@ -163,7 +173,7 @@ export function TaskCard({ task, minutes, onPress, compact }: { task: Task; minu
 
 // ---------------------------------------------------------------- kanban
 
-export function TaskKanban({ tasks, minutes }: ViewProps) {
+export function TaskKanban({ tasks, minutes, closedDays }: ViewProps) {
   const open = useOpenTask();
   const { width } = useWindowDimensions();
   const colWidth = width < 600 ? Math.min(300, width - 64) : 290;
@@ -184,9 +194,10 @@ export function TaskKanban({ tasks, minutes }: ViewProps) {
             </View>
             {items.map((t) => (
               <View key={t.id} style={{ gap: 6 }}>
-                <TaskCard task={t} minutes={minutes.get(t.id)} onPress={() => open(t)} compact />
+                <TaskCard task={t} minutes={minutes.get(t.id)} onPress={() => open(t)} compact dayClosed={closedDays?.has(t.day)} />
                 <StatusMenu
                   task={t}
+                  dayClosed={closedDays?.has(t.day)}
                   trigger={(openMenu) => (
                     <Tap onPress={openMenu} style={{ flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", paddingHorizontal: 6 }}>
                       <Icon name="move" size={12} color={C.muted} />
@@ -212,7 +223,7 @@ export function TaskKanban({ tasks, minutes }: ViewProps) {
 
 const WEEKDAYS = ["سبت", "أحد", "اثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة"];
 
-export function TaskCalendar({ tasks, minutes }: ViewProps) {
+export function TaskCalendar({ tasks, minutes, closedDays }: ViewProps) {
   const open = useOpenTask();
   const today = todayISO();
   const [month, setMonth] = useState(startOfMonth(today));
@@ -329,7 +340,7 @@ export function TaskCalendar({ tasks, minutes }: ViewProps) {
             مستحقة في {fmtDay(selected)} · {selectedTasks.length}
           </T>
           {selectedTasks.map((t) => (
-            <TaskCard key={t.id} task={t} minutes={minutes.get(t.id)} onPress={() => open(t)} />
+            <TaskCard key={t.id} task={t} minutes={minutes.get(t.id)} onPress={() => open(t)} dayClosed={closedDays?.has(t.day)} />
           ))}
           {selectedTasks.length === 0 ? <T className="text-muted">لا توجد مهام مستحقة في هذا اليوم.</T> : null}
         </View>

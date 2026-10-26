@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Platform, View } from "react-native";
 import { ActivityList } from "@/components/madar/activity";
 import { Page } from "@/components/madar/shell";
-import { DueLabel, PriorityPill, StatusPill, TaskForm, allowedTransitions } from "@/components/madar/tasks";
+import { DueLabel, DayLabel, FinishButton, PriorityPill, StatusPill, TaskForm, allowedTransitions } from "@/components/madar/tasks";
 import {
   Avatar,
   Button,
@@ -70,6 +70,7 @@ import {
   useComments,
   useDeleteTask,
   useDeleteTimeSession,
+  useDays,
   useLookups,
   useOpenSession,
   useSetTaskStatus,
@@ -89,6 +90,7 @@ export default function TaskDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const taskQuery = useTask(id);
+  const daysQuery = useDays();
   const wide = useIsWide(1100);
   const back = () => (router.canGoBack() ? router.back() : router.replace("/tasks" as any));
 
@@ -109,32 +111,35 @@ export default function TaskDetailScreen() {
     );
   }
 
+  const dayRow = task.day ? daysQuery.data?.find((d) => d.day === task.day) : undefined;
+  const dayClosed = !isMonthLocked(task) && (dayRow ? dayRow.status === "closed" : !!task.day && task.day < todayISO());
+
   return (
     <Page back={back} maxWidth={1240}>
-      <TaskHeader task={task} />
+      <TaskHeader task={task} dayClosed={dayClosed} />
       {wide ? (
         <View style={{ flexDirection: "row", gap: 20, alignItems: "flex-start" }}>
           <View style={{ flex: 1.65, gap: 16 }}>
-            <MainColumn task={task} />
+            <MainColumn task={task} dayClosed={dayClosed} />
           </View>
           <View style={{ flex: 1, gap: 16 }}>
-            <SideColumn task={task} />
+            <SideColumn task={task} dayClosed={dayClosed} />
           </View>
         </View>
       ) : (
         <View style={{ gap: 16 }}>
-          <WorkflowCard task={task} />
-          <TimeCard task={task} />
+          <WorkflowCard task={task} dayClosed={dayClosed} />
+          <TimeCard task={task} dayClosed={dayClosed} />
           <DetailsCard task={task} />
-          <MainColumn task={task} />
-          <AttachmentsCard task={task} />
+          <MainColumn task={task} dayClosed={dayClosed} />
+          <AttachmentsCard task={task} dayClosed={dayClosed} />
         </View>
       )}
     </Page>
   );
 }
 
-function TaskHeader({ task }: { task: Task }) {
+function TaskHeader({ task, dayClosed }: { task: Task; dayClosed: boolean }) {
   const me = useMe();
   const router = useRouter();
   const { projectMap } = useLookups();
@@ -163,8 +168,8 @@ function TaskHeader({ task }: { task: Task }) {
           {task.title}
         </T>
         <View style={{ flexDirection: "row", gap: 8 }}>
-          {canEditTaskDetails(me, task) ? <Button title="تعديل" icon="edit-2" variant="secondary" size="sm" onPress={() => setEditing(true)} /> : null}
-          {canDeleteTask(me, task) ? (
+          {canEditTaskDetails(me, task) && !dayClosed ? <Button title="تعديل" icon="edit-2" variant="secondary" size="sm" onPress={() => setEditing(true)} /> : null}
+          {canDeleteTask(me, task) && !dayClosed ? (
             <Button
               icon="trash-2"
               variant="danger"
@@ -186,8 +191,9 @@ function TaskHeader({ task }: { task: Task }) {
       <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <StatusPill status={task.status} />
         <PriorityPill priority={task.priority} />
+        <DayLabel task={task} />
         <DueLabel task={task} />
-        {isMonthLocked(task) ? <Pill label="شهر مؤرشف" icon="archive" /> : null}
+        {isMonthLocked(task) ? <Pill label="شهر مؤرشف" icon="archive" /> : !dayClosed ? null : <Pill label="يوم مؤرشف" icon="lock" />}
       </View>
       {isMonthLocked(task) && task.month ? (
         <InfoBox tone="neutral" icon="lock">
@@ -196,13 +202,22 @@ function TaskHeader({ task }: { task: Task }) {
           </T>
           <T className="text-[12.5px]">أُغلق هذا الشهر، وكل مهامه وتعليقاته وسجل وقته محفوظة للعرض فقط.</T>
         </InfoBox>
+      ) : dayClosed && task.day ? (
+        <InfoBox tone="neutral" icon="lock">
+          <T weight="semibold" className="text-[13px]">
+            أُغلق يوم {fmtDayFull(task.day)}
+          </T>
+          <T className="text-[12.5px]">
+            {task.status === "review" ? "اليوم مؤرشف، لكن المراجع يستطيع اعتماد المهمة أو إعادتها للتنفيذ." : "اليوم مؤرشف؛ المهمة غير المنتهية مسجلة كمتأخرة، وكل بياناتها محفوظة للعرض فقط."}
+          </T>
+        </InfoBox>
       ) : null}
       <TaskForm visible={editing} onClose={() => setEditing(false)} task={task} />
     </View>
   );
 }
 
-function MainColumn({ task }: { task: Task }) {
+function MainColumn({ task, dayClosed }: { task: Task; dayClosed: boolean }) {
   const [tab, setTab] = useState<"comments" | "activity">("comments");
   return (
     <>
@@ -214,7 +229,7 @@ function MainColumn({ task }: { task: Task }) {
           <T className="text-muted">لا يوجد وصف.</T>
         )}
       </Card>
-      <SubtasksCard task={task} />
+      <SubtasksCard task={task} dayClosed={dayClosed} />
       <Card style={{ gap: 12 }}>
         <Segmented
           size="sm"
@@ -225,26 +240,26 @@ function MainColumn({ task }: { task: Task }) {
             { value: "activity", label: "سجل النشاط", icon: "activity" },
           ]}
         />
-        {tab === "comments" ? <Comments task={task} /> : <TaskActivity task={task} />}
+        {tab === "comments" ? <Comments task={task} dayClosed={dayClosed} /> : <TaskActivity task={task} />}
       </Card>
     </>
   );
 }
 
-function SideColumn({ task }: { task: Task }) {
+function SideColumn({ task, dayClosed }: { task: Task; dayClosed: boolean }) {
   return (
     <>
-      <WorkflowCard task={task} />
-      <TimeCard task={task} />
+      <WorkflowCard task={task} dayClosed={dayClosed} />
+      <TimeCard task={task} dayClosed={dayClosed} />
       <DetailsCard task={task} />
-      <AttachmentsCard task={task} />
+      <AttachmentsCard task={task} dayClosed={dayClosed} />
     </>
   );
 }
 
 // ---------------------------------------------------------------- workflow
 
-function WorkflowCard({ task }: { task: Task }) {
+function WorkflowCard({ task, dayClosed }: { task: Task; dayClosed: boolean }) {
   const me = useMe();
   const setStatus = useSetTaskStatus();
   const toast = useToast();
@@ -254,7 +269,7 @@ function WorkflowCard({ task }: { task: Task }) {
   const work = canWorkOnTask(me, task);
   const review = canReviewTask(me, task);
   const self = isSelfOwned(me, task);
-  const allowed = allowedTransitions(me, task);
+  const allowed = allowedTransitions(me, task, dayClosed);
   const { profileMap } = useLookups();
   const reviewer = task.reviewer_id ? profileMap.get(task.reviewer_id) : null;
 
@@ -271,26 +286,12 @@ function WorkflowCard({ task }: { task: Task }) {
   if (task.status === "review" && review) {
     actions.push(<Button key="approve" title="اعتماد وإغلاق" icon="check-circle" onPress={() => move("done", "تم اعتماد المهمة")} full />);
     actions.push(<Button key="return" title="إعادة للتنفيذ مع ملاحظة" icon="corner-up-right" variant="secondary" onPress={() => setReturning(true)} full />);
-  } else if (task.status !== "done" && task.status !== "review" && work) {
-    if (self || manage) {
-      actions.push(<Button key="done" title="إكمال المهمة" icon="check-circle" onPress={() => move("done", "أُغلقت المهمة")} full />);
-    }
-    if (!self) {
-      actions.push(
-        <Button
-          key="review"
-          title="إرسال للمراجعة"
-          icon="send"
-          variant={self || manage ? "secondary" : "primary"}
-          onPress={() => move("review", "أُرسلت المهمة للمراجعة")}
-          full
-        />,
-      );
-    }
+  } else if (!dayClosed && task.status !== "done" && task.status !== "review" && work) {
+    actions.push(<FinishButton key="finish" task={task} full />);
     if (task.status === "todo") actions.push(<Button key="start" title="بدء التنفيذ" icon="play" variant="soft" onPress={() => move("in_progress", "بدأ التنفيذ")} full />);
     if (task.status === "blocked") actions.push(<Button key="resume" title="استئناف" icon="play" variant="soft" onPress={() => move("in_progress", "تم استئناف المهمة")} full />);
     else actions.push(<Button key="block" title="تعليق المهمة" icon="pause" variant="ghost" onPress={() => move("blocked", "عُلّقت المهمة")} full />);
-  } else if (task.status === "review" && work) {
+  } else if (!dayClosed && task.status === "review" && work) {
     actions.push(<Button key="recall" title="سحب من المراجعة" icon="rotate-ccw" variant="secondary" onPress={() => move("in_progress", "عادت المهمة للتنفيذ")} full />);
   } else if (task.status === "done" && allowed.includes("in_progress")) {
     actions.push(<Button key="reopen" title="إعادة فتح المهمة" icon="rotate-ccw" variant="secondary" onPress={() => move("in_progress", "أُعيد فتح المهمة")} full />);
@@ -298,19 +299,23 @@ function WorkflowCard({ task }: { task: Task }) {
 
   const statusHint = isMonthLocked(task)
     ? "الشهر مؤرشف؛ سير العمل محفوظ للعرض فقط."
-    : task.status === "review"
-      ? review
-        ? "المهمة بانتظار قرارك: اعتمدها أو أعدها للتنفيذ بملاحظة."
-        : `بانتظار المراجعة${reviewer ? ` من ${reviewer.full_name}` : " من مدير القسم"}.`
-      : task.status === "done"
-        ? `اكتملت ${task.completed_at ? fmtRelative(task.completed_at) : ""}.`
-        : task.status === "blocked"
-          ? "المهمة معلّقة حاليًا."
-          : !isAssignee(me, task) && (manage || self)
-            ? "يمكنك إغلاق المهمة مباشرة بصفتك مسؤولًا عنها، أو انتظار إرسالها للمراجعة."
+    : dayClosed
+      ? task.status === "review" && review
+        ? "أُغلق اليوم؛ يمكنك اعتماد المهمة أو إعادتها للتنفيذ فقط."
+        : "أُغلق اليوم وأُرشف؛ المهمة محفوظة للعرض فقط."
+      : task.status === "review"
+        ? review
+          ? "المهمة بانتظار قرارك: اعتمدها أو أعدها للتنفيذ بملاحظة."
+          : `بانتظار المراجعة${reviewer ? ` من ${reviewer.full_name}` : " من مدير القسم"}.`
+        : task.status === "done"
+          ? `اكتملت ${task.completed_at ? fmtRelative(task.completed_at) : ""}.`
+          : task.status === "blocked"
+            ? "المهمة معلّقة حاليًا."
             : self
-              ? "مهمة شخصية: يمكنك إغلاقها مباشرة."
-              : "عند الانتهاء أرسلها للمراجعة ليعتمدها المسؤول.";
+              ? "مهمة شخصية: زر الإنهاء يغلقها مباشرة."
+              : manage || !isAssignee(me, task)
+                ? "أنهِ المهمة عند اكتمالها؛ ستُرسل للمراجعة ليعتمدها المسؤول."
+                : "عند الانتهاء اضغط «إنهاء» لتُرسل المهمة للمراجعة.";
 
   return (
     <Card style={{ gap: 12 }}>
@@ -329,7 +334,13 @@ function WorkflowCard({ task }: { task: Task }) {
           </T>
         </InfoBox>
       ) : null}
-      {actions.length ? <View style={{ gap: 8 }}>{actions}</View> : me.role === "viewer" ? <T className="text-[12px] text-muted">حساب المشاهدة للاطلاع فقط.</T> : null}
+      {actions.length ? (
+        <View style={{ gap: 8 }}>{actions}</View>
+      ) : dayClosed ? (
+        <T className="text-[12px] text-muted">اليوم مؤرشف؛ لا توجد إجراءات متاحة.</T>
+      ) : me.role === "viewer" ? (
+        <T className="text-[12px] text-muted">حساب المشاهدة للاطلاع فقط.</T>
+      ) : null}
       <Sheet
         visible={returning}
         onClose={() => setReturning(false)}
@@ -360,7 +371,7 @@ function WorkflowCard({ task }: { task: Task }) {
 
 // ---------------------------------------------------------------- time
 
-function TimeCard({ task }: { task: Task }) {
+function TimeCard({ task, dayClosed }: { task: Task; dayClosed: boolean }) {
   const me = useMe();
   const open = useOpenSession();
   const sessions = useTaskSessions(task.id);
@@ -377,7 +388,7 @@ function TimeCard({ task }: { task: Task }) {
   const list = sessions.data ?? [];
   const total = list.reduce((sum, s) => sum + sessionMinutes(s, now), 0);
   const mine = list.filter((s) => s.user_id === me.id).reduce((sum, s) => sum + sessionMinutes(s, now), 0);
-  const track = canTrackTime(me, task);
+  const track = canTrackTime(me, task) && !dayClosed;
   const progress = task.estimate_minutes ? total / task.estimate_minutes : 0;
 
   return (
@@ -600,6 +611,7 @@ function DetailsCard({ task }: { task: Task }) {
       <DetailRow icon="user-check" label="المراجع" value={reviewer?.full_name ?? "مديرو القسم"} />
       <DetailRow icon="layers" label="القسم" value={dept?.name ?? "بدون قسم"} />
       <DetailRow icon="calendar" label="الشهر" value={task.month ? `${fmtMonth(task.month.period)}${task.month.status === "closed" ? " · مؤرشف" : ""}` : "—"} />
+      <DetailRow icon="clock" label="يوم التنفيذ" value={fmtDayFull(task.day)} />
       <DetailRow icon="play-circle" label="البدء" value={fmtDayFull(task.start_date)} />
       <DetailRow icon="flag" label="الاستحقاق" value={fmtDayFull(task.due_date)} />
       <DetailRow icon="user-plus" label="أنشأها" value={`${creator?.full_name ?? "—"} · ${fmtRelative(task.created_at)}`} />
@@ -625,13 +637,13 @@ function DetailRow({ icon, label, value }: { icon: any; label: string; value: st
 
 // ---------------------------------------------------------------- subtasks
 
-function SubtasksCard({ task }: { task: Task }) {
+function SubtasksCard({ task, dayClosed }: { task: Task; dayClosed: boolean }) {
   const me = useMe();
   const subtasks = useSubtasks(task.id);
   const { add, toggle, remove } = useSubtaskActions(task.id);
   const toast = useToast();
   const [title, setTitle] = useState("");
-  const work = canWorkOnTask(me, task);
+  const work = canWorkOnTask(me, task) && !dayClosed;
   const list = subtasks.data ?? [];
   const done = list.filter((s) => s.done).length;
   const submit = () => {
@@ -689,7 +701,7 @@ function SubtasksCard({ task }: { task: Task }) {
 
 // ---------------------------------------------------------------- comments
 
-function Comments({ task }: { task: Task }) {
+function Comments({ task, dayClosed }: { task: Task; dayClosed: boolean }) {
   const me = useMe();
   const comments = useComments(task.id);
   const { add, remove } = useCommentActions(task.id);
@@ -697,7 +709,7 @@ function Comments({ task }: { task: Task }) {
   const toast = useToast();
   const [body, setBody] = useState("");
   const list = comments.data ?? [];
-  const open = !isMonthLocked(task);
+  const open = !isMonthLocked(task) && !dayClosed;
   const canWrite = open && (canWorkOnTask(me, task) || canReviewTask(me, task));
   const submit = () => {
     const v = body.trim();
@@ -753,14 +765,14 @@ function TaskActivity({ task }: { task: Task }) {
 
 // ---------------------------------------------------------------- attachments
 
-function AttachmentsCard({ task }: { task: Task }) {
+function AttachmentsCard({ task, dayClosed }: { task: Task; dayClosed: boolean }) {
   const me = useMe();
   const attachments = useAttachments(task.id);
   const { upload, remove } = useAttachmentActions(task.id);
   const toast = useToast();
   const { profileMap } = useLookups();
-  const work = canWorkOnTask(me, task);
-  const manage = canManageTask(me, task);
+  const work = canWorkOnTask(me, task) && !dayClosed;
+  const manage = canManageTask(me, task) && !dayClosed;
   const list = attachments.data ?? [];
 
   const pick = async () => {

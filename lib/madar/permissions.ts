@@ -1,6 +1,7 @@
 // Client-side mirror of the database rules. The database (RLS + triggers) remains the source of
 // truth; these helpers only decide which actions to show.
 import type { Department, Profile, Project, Role, Task } from "./types";
+import { todayISO } from "./format";
 
 const DEPT_LEADS: Role[] = ["manager", "supervisor"];
 
@@ -19,6 +20,12 @@ export function isAssignee(me: Profile | null | undefined, task: Task) {
 /** Closed months are archived: everything inside them is read-only. */
 export function isMonthLocked(task: Task) {
   return task.month?.status === "closed";
+}
+
+/** Closed days are archived too; reviewers may still decide on tasks waiting for review. */
+export function isTaskDayClosed(task: Task, dayStatus?: "open" | "closed") {
+  if (dayStatus) return dayStatus === "closed";
+  return !!task.day && task.day < todayISO();
 }
 
 export function canReviewTask(me: Profile | null | undefined, task: Task) {

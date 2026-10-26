@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { View } from "react-native";
+import { DayCalendar } from "@/components/madar/day-calendar";
 import { Page } from "@/components/madar/shell";
 import { TaskForm } from "@/components/madar/tasks";
 import { TaskCalendar, TaskKanban, TaskTable, TaskTimeline } from "@/components/madar/task-views";
@@ -19,10 +20,10 @@ import {
   useIsWide,
   useToast,
 } from "@/components/madar/ui";
-import { fmtDateTime, fmtHours, fmtMonth, isOverdue } from "@/lib/madar/format";
+import { addDays, fmtDateTime, fmtDayFull, fmtHours, fmtMonth, isOverdue, todayISO } from "@/lib/madar/format";
 import { PRIORITY_LABELS, PRIORITY_ORDER, STATUS_LABELS, STATUS_ORDER } from "@/lib/madar/labels";
 import { canCreateTask, canReviewTask, isAssignee, isLead } from "@/lib/madar/permissions";
-import { useCloseMonth, useLookups, useMonths, useTasks } from "@/lib/madar/queries";
+import { useCloseDay, useCloseMonth, useDays, useLookups, useMonths, useTasks } from "@/lib/madar/queries";
 import { sortTasks, useMinutesMap, type Sort } from "@/lib/madar/task-utils";
 import { useMe } from "@/lib/madar/session";
 import type { Priority, TaskStatus } from "@/lib/madar/types";
@@ -35,13 +36,16 @@ export default function TasksScreen() {
   const me = useMe();
   const router = useRouter();
   const toast = useToast();
-  const params = useLocalSearchParams<{ view?: string; scope?: string; project?: string; new?: string }>();
+  const params = useLocalSearchParams<{ view?: string; scope?: string; project?: string; new?: string; day?: string }>();
   const tasksQuery = useTasks();
   const monthsQuery = useMonths();
+  const daysQuery = useDays();
   const closeMonth = useCloseMonth();
+  const closeDay = useCloseDay();
   const minutes = useMinutesMap();
   const { profiles, projects, departments } = useLookups();
   const wide = useIsWide();
+  const today = todayISO();
 
   const companyAdmin = me.role === "admin";
   const lead = isLead(me);
@@ -74,6 +78,7 @@ export default function TasksScreen() {
   const [view, setView] = useState<ViewMode>((params.view as ViewMode) || "table");
   const [scope, setScope] = useState<Scope>(requestedScope ?? (companyAdmin || lead || me.role === "viewer" ? "all" : "mine"));
   const [monthId, setMonthId] = useState<string | null>(null);
+  const [daySel, setDaySel] = useState<string | null | undefined>(params.day);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<TaskStatus | null>(null);
   const [priority, setPriority] = useState<Priority | null>(null);
@@ -95,9 +100,39 @@ export default function TasksScreen() {
     [tasksQuery.data, selectedMonth],
   );
 
+  const monthIsCurrent = selectedMonth?.period.slice(0, 7) === today.slice(0, 7);
+  const selectedDay = daySel === undefined ? (monthIsCurrent ? today : null) : daySel;
+  const days = daysQuery.data ?? [];
+  const closedDays = useMemo(() => {
+    const set = new Set<string>();
+    (daysQuery.data ?? []).forEach((d) => {
+      if (d.status === "closed") set.add(d.day);
+    });
+    // The database closes any past day even before the sync call lands.
+    monthTasks.forEach((t) => {
+      if (t.day < today) set.add(t.day);
+    });
+    return set;
+  }, [daysQuery.data, monthTasks, today]);
+  const todayRow = days.find((d) => d.day === today);
+  const canCloseToday = companyAdmin && selectedMonth?.status === "open" && monthIsCurrent && todayRow?.status === "open";
+
+  /** New tasks land on the selected day, or the first open day from today. */
+  const defaultDay = useMemo(() => {
+    if (selectedDay && !closedDays.has(selectedDay)) return selectedDay;
+    if (!closedDays.has(today)) return today;
+    for (let i = 1; i <= 31; i += 1) {
+      const candidate = addDays(today, i);
+      if (candidate.slice(0, 7) !== today.slice(0, 7)) break;
+      if (!closedDays.has(candidate)) return candidate;
+    }
+    return today;
+  }, [selectedDay, closedDays, today]);
+
   const tasks = useMemo(() => {
     const term = q.trim().toLowerCase();
     let list = monthTasks.filter((t) => {
+      if (selectedDay && t.day !== selectedDay) return false;
       if (scope === "mine" && !isAssignee(me, t)) return false;
       if (scope === "created" && t.created_by !== me.id) return false;
       if (scope === "review" && !(t.status === "review" && canReviewTask(me, t))) return false;
@@ -113,7 +148,7 @@ export default function TasksScreen() {
     });
     list = sortTasks(list, sort);
     return list;
-  }, [monthTasks, q, scope, status, priority, projectId, assigneeId, departmentId, hideDone, sort, me]);
+  }, [monthTasks, selectedDay, q, scope, status, priority, projectId, assigneeId, departmentId, hideDone, sort, me]);
 
   const filtersActive = !!(status || priority || projectId || assigneeId || departmentId || q);
 
@@ -126,12 +161,25 @@ export default function TasksScreen() {
     });
   };
 
+  const closeToday = async () => {
+    if (!(await confirmAction(`إغلاق يوم ${fmtDayFull(today)}؟ ستُغلق مهام اليوم ويتوقف تسجيل الوقت عليه، وتبقى بياناته محفوظة للعرض.`, "إغلاق اليوم"))) return;
+    closeDay.mutate(today, {
+      onSuccess: () => toast.show("أُغلق اليوم وأُرشف بكل مهامه"),
+      onError: (e) => toast.show(errorMessage(e), "error"),
+    });
+  };
+
+  const pickMonth = (id: string | null) => {
+    setMonthId(id);
+    setDaySel(undefined);
+  };
+
   return (
     <Page
       title="المهام"
       subtitle={
         selectedMonth
-          ? `${fmtMonth(selectedMonth.period)} · ${tasks.length} من ${monthTasks.length} مهمة`
+          ? `${fmtMonth(selectedMonth.period)}${selectedDay ? ` · ${selectedDay === today ? "مهام اليوم" : fmtDayFull(selectedDay)}` : ""} · ${tasks.length} من ${monthTasks.length} مهمة`
           : tasksQuery.data
             ? `${tasks.length} مهمة`
             : undefined
@@ -139,8 +187,11 @@ export default function TasksScreen() {
       actions={
         <>
           {canCreate ? <Button title="مهمة جديدة" icon="plus" onPress={() => setCreating(true)} /> : null}
+          {canCloseToday ? (
+            <Button title="إغلاق اليوم" icon="lock" variant="secondary" onPress={closeToday} loading={closeDay.isPending} />
+          ) : null}
           {companyAdmin && selectedMonth?.status === "open" ? (
-            <Button title="إغلاق الشهر" icon="lock" variant="secondary" onPress={closeSelectedMonth} loading={closeMonth.isPending} />
+            <Button title="إغلاق الشهر" icon="archive" variant="ghost" onPress={closeSelectedMonth} loading={closeMonth.isPending} />
           ) : null}
         </>
       }
@@ -154,14 +205,14 @@ export default function TasksScreen() {
               label={fmtMonth(m.period)}
               icon={m.status === "open" ? "unlock" : "archive"}
               active={selectedMonth?.id === m.id}
-              onPress={() => setMonthId(m.id)}
+              onPress={() => pickMonth(m.id)}
             />
           ))}
           {months.length > 6 ? (
             <View style={{ minWidth: 190, flex: 1, maxWidth: 240 }}>
               <Select
                 value={selectedMonth?.id ?? null}
-                onChange={setMonthId}
+                onChange={pickMonth}
                 options={months.map((m) => ({ value: m.id, label: fmtMonth(m.period), hint: m.status === "open" ? "مفتوح" : "مؤرشف" }))}
                 title="كل الأشهر"
                 placeholder="كل الأشهر"
@@ -172,11 +223,25 @@ export default function TasksScreen() {
         {selectedMonth ? (
           <T className="text-[12px] text-muted">
             {selectedMonth.status === "open"
-              ? "شهر مفتوح: تُضاف إليه مهام الشهر الحالية، ويُغلق تلقائيًا مع بداية الشهر التالي أو يدويًا."
+              ? "كل يوم يُغلق تلقائيًا في منتصف الليل بتوقيت الشركة (أو يدويًا من مدير الشركة)، ويُفتح يوم جديد. المهام غير المنتهية تبقى مؤرشفة كمتأخرة."
               : `شهر مؤرشف — أُغلق ${fmtDateTime(selectedMonth.closed_at)}. كل بياناته محفوظة للعرض فقط.`}
           </T>
         ) : null}
       </View>
+
+      {selectedMonth ? (
+        <View style={{ gap: 10, marginBottom: 12 }}>
+          <DayCalendar month={selectedMonth.period} tasks={monthTasks} days={days} selected={selectedDay} onSelect={setDaySel} />
+          {selectedDay && closedDays.has(selectedDay) && selectedMonth.status === "open" ? (
+            <InfoBox tone="neutral" icon="lock">
+              <T weight="semibold" className="text-[13px]">
+                {selectedDay === today ? "أُغلق اليوم" : `أُغلق يوم ${fmtDayFull(selectedDay)}`}
+              </T>
+              <T className="text-[12.5px]">المهام والتعليقات والوقت محفوظة للعرض فقط. المهام التي لم تُنجز تبقى مسجلة كمتأخرة.</T>
+            </InfoBox>
+          ) : null}
+        </View>
+      ) : null}
 
       {locked && selectedMonth?.summary ? (
         <InfoBox tone="warning" icon="lock">
@@ -280,14 +345,21 @@ export default function TasksScreen() {
           hint={canCreate ? "أضف مهام الشهر ووزّعها على الفريق." : "ستظهر هنا المهام المسندة إليك."}
           action={canCreate ? <Button title="مهمة جديدة" icon="plus" onPress={() => setCreating(true)} /> : null}
         />
+      ) : tasks.length === 0 && selectedDay ? (
+        <EmptyState
+          icon="calendar"
+          title={selectedDay === today ? "لا توجد مهام لليوم" : `لا توجد مهام في ${fmtDayFull(selectedDay)}`}
+          hint={closedDays.has(selectedDay) ? "هذا اليوم مؤرشف؛ اختر يومًا آخر من التقويم." : canCreate ? "أضف مهمة لهذا اليوم وحدد المسؤول عنها." : "لم تُسند إليك مهام في هذا اليوم."}
+          action={canCreate && !closedDays.has(selectedDay) ? <Button title="مهمة جديدة" icon="plus" onPress={() => setCreating(true)} /> : null}
+        />
       ) : view === "kanban" ? (
-        <TaskKanban tasks={tasks} minutes={minutes} />
+        <TaskKanban tasks={tasks} minutes={minutes} closedDays={closedDays} />
       ) : view === "calendar" ? (
-        <TaskCalendar tasks={tasks} minutes={minutes} />
+        <TaskCalendar tasks={tasks} minutes={minutes} closedDays={closedDays} />
       ) : view === "timeline" ? (
-        <TaskTimeline tasks={tasks} minutes={minutes} />
+        <TaskTimeline tasks={tasks} minutes={minutes} closedDays={closedDays} />
       ) : (
-        <TaskTable tasks={tasks} minutes={minutes} empty={<EmptyState icon="filter" title="لا توجد مهام مطابقة" hint="جرّب تغيير الفلاتر أو نطاق العرض." />} />
+        <TaskTable tasks={tasks} minutes={minutes} closedDays={closedDays} empty={<EmptyState icon="filter" title="لا توجد مهام مطابقة" hint="جرّب تغيير الفلاتر أو نطاق العرض." />} />
       )}
       {!tasksQuery.isLoading && scope === "mine" && tasks.length === 0 && monthTasks.length > 0 && scopes[0]?.value !== "mine" ? (
         <T className="mt-3 text-center text-[12px] text-muted">اعرض «{scopes[0].label}» لرؤية بقية المهام.</T>
@@ -296,7 +368,7 @@ export default function TasksScreen() {
       <TaskForm
         visible={creating}
         onClose={() => setCreating(false)}
-        defaults={{ project_id: projectId }}
+        defaults={{ project_id: projectId, day: defaultDay }}
         onSaved={(id) => router.push(`/tasks/${id}` as any)}
       />
     </Page>
