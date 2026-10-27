@@ -1,5 +1,15 @@
 # مدار — إدارة الموظفين والمهام ووقت العمل
 
+**Madar is a multi-tenant operations platform for Arabic-speaking companies.** Daily tasks with a server-side work timer, departments and five roles, a submit-for-review workflow, monthly reports, and a fully RTL Arabic interface — shipped as a responsive web app and a mobile app from one Expo codebase.
+
+Every business rule lives in PostgreSQL: row-level security, guard triggers and `SECURITY DEFINER` RPCs. The client only hides what the database already refuses, so the web build, the mobile build and any direct API client get the same guarantees — there is no application server in between.
+
+`Expo Router` `React Native` `TypeScript` `Supabase` `PostgreSQL RLS` `NativeWind` `Arabic RTL`
+
+🌐 Live: <https://madar-three-liart.vercel.app> · 📖 English architecture notes: [plan.md](plan.md)
+
+---
+
 مدار تطبيق عربي لإدارة فريق العمل داخل الشركة: الموظفون والأقسام، والمشاريع والمهام، وسير المراجعة والاعتماد، ووقت العمل الفعلي المسجّل بالمؤقت، والتقارير. يعمل كموقع ويب متجاوب وكتطبيق موبايل (Expo / React Native) من الكود نفسه.
 
 يعمل مدار بنظام **متعدد الشركات**: حساب مطوّر واحد يدير المنصة ويضيف الشركات، وكل شركة لها نظامها الكامل وبياناتها المعزولة تمامًا.
