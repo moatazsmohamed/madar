@@ -74,7 +74,7 @@ export default function MoreScreen() {
           </Tap>
         ))}
       </View>
-      {inCompany ? (
+      {isDeveloper && inCompany ? (
         <View style={{ backgroundColor: C.surface, borderRadius: 18, borderWidth: 1, borderColor: C.border, overflow: "hidden", marginTop: 12 }}>
           <Tap
             onPress={leaveCompany}

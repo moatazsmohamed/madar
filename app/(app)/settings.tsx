@@ -73,7 +73,7 @@ function AccountCard() {
       </T>
       <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
         <Button title="تعديل بياناتي" icon="edit-2" variant="secondary" size="sm" onPress={() => setEditing(true)} />
-        {inCompany ? (
+        {isDeveloper && inCompany ? (
           <Button
             title="الخروج إلى حساب المطور"
             icon="log-out"
