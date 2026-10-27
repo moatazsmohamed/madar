@@ -72,9 +72,11 @@ function useUnread() {
 function DesktopShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { profile, company, signOut } = useSession();
+  const { profile, company, signOut, isDeveloper, inCompany } = useSession();
   const unread = useUnread();
-  const items = profile?.role === "developer" ? DEV_NAV : visible(NAV, profile?.role);
+  const items = isDeveloper && !inCompany ? DEV_NAV : visible(NAV, profile?.role);
+  const navItems: NavItem[] =
+    isDeveloper && inCompany ? [...items, { href: "/companies", label: "كل الشركات", icon: "layers" }] : items;
   return (
     <View style={{ flex: 1, flexDirection: "row", backgroundColor: C.background }}>
       <SkyBackdrop />
@@ -93,7 +95,7 @@ function DesktopShell({ children }: { children: React.ReactNode }) {
           <View style={{ flex: 1, gap: 2 }}>
             <Wordmark size={22} />
             <T className="text-[12px] text-muted" numberOfLines={1}>
-              {profile?.role === "developer" ? "إدارة المنصة" : company?.name ?? ""}
+              {isDeveloper ? (inCompany ? company?.name ?? "" : "إدارة المنصة") : company?.name ?? ""}
             </T>
           </View>
           <ThemeToggle />
@@ -102,7 +104,7 @@ function DesktopShell({ children }: { children: React.ReactNode }) {
           <TimerChip />
         </View>
         <View style={{ marginTop: 14, gap: 2, flex: 1 }}>
-          {items.map((item) => {
+          {navItems.map((item) => {
             const active = isActive(pathname, item.href);
             return (
               <Pressable
@@ -155,9 +157,9 @@ function MobileShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { profile, company } = useSession();
+  const { profile, company, isDeveloper, inCompany } = useSession();
   const unread = useUnread();
-  const dev = profile?.role === "developer";
+  const dev = isDeveloper && !inCompany;
   const dock = dev ? DEV_DOCK : visible(DOCK, profile?.role);
   return (
     <View style={{ flex: 1, backgroundColor: C.background }}>
@@ -178,11 +180,13 @@ function MobileShell({ children }: { children: React.ReactNode }) {
             مدار
           </T>
           <T className="text-[11px] text-muted" numberOfLines={1} style={{ lineHeight: 15 }}>
-            {dev ? "إدارة المنصة" : company?.name ?? ""}
+            {dev ? "إدارة المنصة" : inCompany ? `${company?.name ?? ""} · دخول مطور` : company?.name ?? ""}
           </T>
         </View>
         <ThemeToggle compact />
-        <IconButton icon="bell" label="الإشعارات" badge={unread} onPress={() => router.push("/notifications" as any)} />
+        {!isDeveloper || inCompany ? (
+          <IconButton icon="bell" label="الإشعارات" badge={unread} onPress={() => router.push("/notifications" as any)} />
+        ) : null}
       </View>
       <View style={{ paddingHorizontal: 16 }}>
         <TimerChip compact />

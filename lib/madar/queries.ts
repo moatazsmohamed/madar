@@ -273,11 +273,15 @@ export function useInvitations(enabled: boolean) {
 
 /** Id → record maps used across screens. */
 export function useLookups() {
+  const { profile: me } = useSession();
   const profiles = useProfiles();
   const departments = useDepartments();
   const projects = useProjects();
   return useMemo(() => {
     const profileMap = new Map((profiles.data ?? []).map((p) => [p.id, p]));
+    // A developer acting inside a company is not a company member, but their id
+    // still appears as the actor on records they create there.
+    if (me) profileMap.set(me.id, me);
     const departmentMap = new Map((departments.data ?? []).map((d) => [d.id, d]));
     const projectMap = new Map((projects.data ?? []).map((p) => [p.id, p]));
     return {
@@ -289,7 +293,7 @@ export function useLookups() {
       projectMap,
       loading: profiles.isLoading || departments.isLoading || projects.isLoading,
     };
-  }, [profiles.data, departments.data, projects.data, profiles.isLoading, departments.isLoading, projects.isLoading]);
+  }, [me, profiles.data, departments.data, projects.data, profiles.isLoading, departments.isLoading, projects.isLoading]);
 }
 
 // ---------------------------------------------------------------- writes
@@ -607,6 +611,20 @@ export function useCompanies(enabled = true) {
   });
 }
 
+/** Admins of every company, for the developer companies screen. */
+export function useDeveloperCompanyAdmins(enabled = true) {
+  return useQuery({
+    queryKey: ["developer-company-admins"],
+    enabled,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("developer_company_admins");
+      if (error) throw error;
+      return (data ?? []) as { id: string; company_id: string; full_name: string; email: string }[];
+    },
+    staleTime: 60_000,
+  });
+}
+
 export function useCreateCompany() {
   return useAction(
     async (vars: {
@@ -616,7 +634,7 @@ export function useCreateCompany() {
       admin_email: string;
       admin_password: string;
     }) => callAccounts({ action: "create_company", ...vars }),
-    [["companies"], ["profiles"], ["developer-stats"]],
+    [["companies"], ["profiles"], ["developer-stats"], ["developer-company-admins"]],
   );
 }
 

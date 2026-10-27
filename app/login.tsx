@@ -13,7 +13,7 @@ import { callAccounts, errorMessage, supabase } from "@/lib/supabase";
 type Mode = "login" | "register" | "setup";
 
 export default function LoginScreen() {
-  const { ready, session, profile } = useSession();
+  const { ready, session, profile, profileLoading, isDeveloper, inCompany, contextLoading } = useSession();
   const router = useRouter();
   const wide = useIsWide(860);
   const insets = useSafeAreaInsets();
@@ -31,8 +31,8 @@ export default function LoginScreen() {
     if (status.data && !status.data.has_developer) setMode("setup");
   }, [status.data]);
 
-  if (!ready) return <Loading />;
-  if (session && profile) return <Redirect href={profile.role === "developer" ? "/companies" : "/dashboard"} />;
+  if (!ready || (session && (profileLoading || contextLoading))) return <Loading />;
+  if (session && profile) return <Redirect href={isDeveloper ? (inCompany ? "/dashboard" : "/companies") : "/dashboard"} />;
 
   const form = (
     <View style={{ width: "100%", maxWidth: 420, alignSelf: "center", gap: 18 }}>

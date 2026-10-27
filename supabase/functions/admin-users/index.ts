@@ -188,6 +188,19 @@ Deno.serve(async (req: Request) => {
   if (!me || me.status !== "active") return fail("حسابك غير مفعّل", 403);
   const myRole = me.role as Role | "developer";
 
+  // A developer works inside one company at a time and acts as its admin there.
+  let activeCompany: string | null = null;
+  if (myRole === "developer") {
+    const { data } = await admin
+      .from("developer_active_companies")
+      .select("company_id")
+      .eq("user_id", me.id)
+      .maybeSingle();
+    activeCompany = data?.company_id ?? null;
+  }
+  const actingCompany = me.company_id ?? activeCompany;
+  const actingRole: Role | "developer" = myRole === "developer" ? (actingCompany ? "admin" : "developer") : myRole;
+
   if (action === "create_company") {
     if (myRole !== "developer") return fail("إضافة الشركات من صلاحيات حساب المطور", 403);
     const name = text(body.name, 120);
@@ -279,7 +292,7 @@ Deno.serve(async (req: Request) => {
   }
 
   if (action === "create_member") {
-    if (myRole === "developer") return fail("حساب المطور يضيف الشركات لا الموظفين", 403);
+    if (actingRole === "developer") return fail("ادخل إلى شركة أولًا لتضيف أعضاءها", 403);
     if (!emailOk(body.email)) return fail("أدخل بريدًا إلكترونيًا صحيحًا");
     if (!passwordOk(body.password)) return fail("كلمة المرور يجب أن تكون 8 أحرف على الأقل");
     const role = (ROLES as readonly string[]).includes(body.role as string) ? (body.role as Role) : "employee";
@@ -287,15 +300,24 @@ Deno.serve(async (req: Request) => {
     const fullName = text(body.full_name, 120);
     const jobTitle = text(body.job_title, 120) || null;
     if (!fullName) return fail("أدخل اسم الموظف");
-    if (!me.company_id) return fail("حسابك غير مرتبط بشركة", 403);
+    if (!actingCompany) return fail("حسابك غير مرتبط بشركة", 403);
 
-    if (myRole === "manager") {
+    if (actingRole === "manager") {
       if (!["supervisor", "employee", "viewer"].includes(role)) {
         return fail("مدير القسم يضيف مشرفين وموظفين ومشاهدين فقط", 403);
       }
       departmentId = me.department_id;
-    } else if (myRole !== "admin") {
+    } else if (actingRole !== "admin") {
       return fail("إضافة الموظفين من صلاحيات مدير النظام ومدير القسم", 403);
+    }
+
+    if (departmentId) {
+      const { data: dept } = await admin
+        .from("departments")
+        .select("company_id")
+        .eq("id", departmentId)
+        .maybeSingle();
+      if (!dept || dept.company_id !== actingCompany) return fail("هذا القسم لا يتبع الشركة", 400);
     }
 
     const email = body.email.trim().toLowerCase();
@@ -304,7 +326,7 @@ Deno.serve(async (req: Request) => {
         email,
         full_name: fullName,
         role,
-        company_id: me.company_id,
+        company_id: actingCompany,
         department_id: departmentId,
         job_title: jobTitle,
         invited_by: me.id,
@@ -318,10 +340,10 @@ Deno.serve(async (req: Request) => {
       email,
       password: body.password,
       email_confirm: true,
-      user_metadata: { full_name: fullName, company_id: me.company_id },
+      user_metadata: { full_name: fullName, company_id: actingCompany },
     });
     if (error || !data.user) {
-      await admin.from("invitations").delete().eq("email", email).eq("company_id", me.company_id).is("accepted_at", null);
+      await admin.from("invitations").delete().eq("email", email).eq("company_id", actingCompany).is("accepted_at", null);
       return fail(friendlyAuthError(error?.message ?? ""));
     }
     return reply(200, { ok: true, user_id: data.user.id });

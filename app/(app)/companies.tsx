@@ -26,8 +26,8 @@ import { copyText, joinUrl } from "@/lib/madar/links";
 import {
   useCompanies,
   useCreateCompany,
+  useDeveloperCompanyAdmins,
   useDeveloperStats,
-  useProfiles,
   useRegenerateJoinCode,
   useResetPassword,
   useReviewCompany,
@@ -40,12 +40,12 @@ import { errorMessage } from "@/lib/supabase";
 type CompanyAdmin = { id: string; full_name: string; email: string };
 
 export default function CompaniesScreen() {
-  const { isDeveloper } = useSession();
+  const { isDeveloper, activeCompanyId, inCompany, company: activeCompany, enterCompany, exitCompany } = useSession();
   const router = useRouter();
   const wide = useIsWide();
   const companies = useCompanies(isDeveloper);
   const stats = useDeveloperStats(isDeveloper);
-  const profiles = useProfiles();
+  const admins = useDeveloperCompanyAdmins(isDeveloper);
   const create = useCreateCompany();
   const review = useReviewCompany();
   const setStatus = useSetCompanyStatus();
@@ -60,18 +60,19 @@ export default function CompaniesScreen() {
   const [error, setError] = useState<string | null>(null);
   const [confirmReject, setConfirmReject] = useState<string | null>(null);
   const [passwordFor, setPasswordFor] = useState<{ companyId: string; admins: CompanyAdmin[] } | null>(null);
+  const [entering, setEntering] = useState<string | null>(null);
 
   const adminsByCompany = useMemo(() => {
     const map = new Map<string, CompanyAdmin[]>();
-    (profiles.data ?? [])
-      .filter((p) => p.role === "admin" && p.company_id)
+    (admins.data ?? [])
+      .filter((p) => p.company_id)
       .forEach((p) => {
-        const list = map.get(p.company_id!) ?? [];
+        const list = map.get(p.company_id) ?? [];
         list.push({ id: p.id, full_name: p.full_name || p.email, email: p.email });
-        map.set(p.company_id!, list);
+        map.set(p.company_id, list);
       });
     return map;
-  }, [profiles.data]);
+  }, [admins.data]);
 
   const statsById = useMemo(() => {
     const map = new Map<string, DeveloperCompanyStats>();
@@ -162,10 +163,56 @@ export default function CompaniesScreen() {
     });
   };
 
+  const enter = async (company: { id: string; name: string }) => {
+    setEntering(company.id);
+    try {
+      await enterCompany(company.id);
+      toast.show(`دخلت إلى ${company.name} بصلاحيات مدير الشركة`);
+      router.push("/dashboard");
+    } catch (e) {
+      toast.show(errorMessage(e), "error");
+    } finally {
+      setEntering(null);
+    }
+  };
+
+  const leave = async () => {
+    try {
+      await exitCompany();
+      toast.show("خرجت من الشركة إلى حساب المطور");
+    } catch (e) {
+      toast.show(errorMessage(e), "error");
+    }
+  };
+
   return (
-    <Page title="الشركات" subtitle="حساب المطور: كل الشركات في مكان واحد — روابط الدعوة، التقارير، وحالة كل شركة.">
+    <Page
+      title="الشركات"
+      subtitle={
+        inCompany
+          ? `أنت تعمل الآن داخل ${activeCompany?.name ?? "شركة"} — يمكنك فتح لوحتها أو اختيار شركة أخرى.`
+          : "حساب المطور: كل الشركات في مكان واحد — روابط الدعوة، التقارير، وحالة كل شركة."
+      }
+    >
       <View style={{ flexDirection: wide ? "row" : "column", gap: 16, alignItems: wide ? "flex-start" : "stretch" }}>
         <View style={{ flex: wide ? 1.25 : undefined, gap: 12 }}>
+          {inCompany ? (
+            <Card style={{ gap: 10, borderColor: C.primary }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <T weight="bold" style={{ fontSize: 16.5, lineHeight: 26, flex: 1 }}>
+                  أنت الآن داخل {activeCompany?.name ?? "شركة"}
+                </T>
+                <Pill label="صلاحيات مدير الشركة" tone="primary" dot />
+              </View>
+              <T className="text-[12.5px] text-muted">
+                كل ما يفعله مدير الشركة متاح من حساب المطور: الأقسام، الفريق، المهام، إغلاق الشهر والتقارير.
+              </T>
+              <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+                <Button title="افتح لوحة الشركة" icon="home" size="sm" onPress={() => router.push("/dashboard")} />
+                <Button title="الخروج من الشركة" icon="log-out" size="sm" variant="secondary" onPress={leave} />
+              </View>
+            </Card>
+          ) : null}
           {pending.length ? (
             <>
               <SectionLabel>طلبات فتح شركات ({pending.length})</SectionLabel>
@@ -237,6 +284,7 @@ export default function CompaniesScreen() {
                       tone={company.status === "active" ? "primary" : "error"}
                       dot
                     />
+                    {activeCompanyId === company.id ? <Pill label="داخلها الآن" tone="info" dot /> : null}
                   </View>
                   <T className="text-[12.5px] text-muted">
                     {TIMEZONES.find((t) => t.value === company.timezone)?.label ?? company.timezone}
@@ -282,6 +330,17 @@ export default function CompaniesScreen() {
                   </View>
 
                   <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+                    {activeCompanyId === company.id ? (
+                      <Button title="لوحة الشركة" icon="home" size="sm" onPress={() => router.push("/dashboard")} />
+                    ) : (
+                      <Button
+                        title="دخول الشركة"
+                        icon="log-in"
+                        size="sm"
+                        loading={entering === company.id}
+                        onPress={() => enter(company)}
+                      />
+                    )}
                     <Button
                       title="تقرير الشركة"
                       icon="bar-chart-2"

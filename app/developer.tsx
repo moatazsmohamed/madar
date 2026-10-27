@@ -8,7 +8,7 @@ import { useSession } from "@/lib/madar/session";
 import { errorMessage, supabase } from "@/lib/supabase";
 
 export default function DeveloperLoginScreen() {
-  const { ready, session, profile } = useSession();
+  const { ready, session, isDeveloper, inCompany, contextLoading } = useSession();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [email, setEmail] = useState("");
@@ -18,7 +18,8 @@ export default function DeveloperLoginScreen() {
   const [busy, setBusy] = useState(false);
 
   if (!ready) return <Loading />;
-  if (session && profile?.role === "developer") return <Redirect href="/companies" />;
+  if (session && isDeveloper && contextLoading) return <Loading />;
+  if (session && isDeveloper) return <Redirect href={inCompany ? "/dashboard" : "/companies"} />;
 
   const submit = async () => {
     setError(null);

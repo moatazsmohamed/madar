@@ -13,7 +13,13 @@ type SessionValue = {
   profileLoading: boolean;
   company: Company | null;
   isDeveloper: boolean;
+  /** Company the developer is currently working inside; null for everyone else. */
+  activeCompanyId: string | null;
+  inCompany: boolean;
+  contextLoading: boolean;
   refreshProfile: () => Promise<unknown>;
+  enterCompany: (companyId: string) => Promise<void>;
+  exitCompany: () => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -55,19 +61,39 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     refetchInterval: (q) => (q.state.data?.status === "pending" ? 15000 : false),
   });
 
-  const profile = profileQuery.data ?? null;
-  const companyId = profile?.company_id ?? null;
+  const rawProfile = profileQuery.data ?? null;
+  const isDeveloper = rawProfile?.role === "developer";
+
+  // The developer account owns the platform but works inside one company at a
+  // time; the database mirrors that pointer in developer_active_companies.
+  const developerContextQuery = useQuery({
+    queryKey: ["developer-active-company", userId],
+    enabled: !!userId && isDeveloper,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("developer_active_companies")
+        .select("company_id")
+        .eq("user_id", userId!)
+        .maybeSingle();
+      if (error) throw error;
+      return (data as { company_id: string } | null)?.company_id ?? null;
+    },
+  });
+
+  const activeCompanyId = isDeveloper ? developerContextQuery.data ?? null : null;
+  const inCompany = isDeveloper && !!activeCompanyId;
+  const companyId = rawProfile?.company_id ?? activeCompanyId ?? null;
 
   // General supervision is a department flag; the client mirrors it onto the profile
   // so the permission helpers can stay pure functions of (me, task).
   const departmentFlagQuery = useQuery({
-    queryKey: ["departments", "mine", profile?.department_id],
-    enabled: !!profile?.department_id,
+    queryKey: ["departments", "mine", rawProfile?.department_id],
+    enabled: !!rawProfile?.department_id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("departments")
         .select("supervises_all")
-        .eq("id", profile!.department_id!)
+        .eq("id", rawProfile!.department_id!)
         .maybeSingle();
       if (error) throw error;
       return !!(data as { supervises_all: boolean } | null)?.supervises_all;
@@ -75,10 +101,22 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     staleTime: 60_000,
   });
 
-  const effectiveProfile = useMemo<Profile | null>(
-    () => (profile ? { ...profile, department_supervises_all: !!departmentFlagQuery.data } : null),
-    [profile, departmentFlagQuery.data],
-  );
+  // Inside a company the developer gets an admin profile scoped to it, so every
+  // permission helper (and the UI built on it) behaves like the company admin.
+  const effectiveProfile = useMemo<Profile | null>(() => {
+    if (!rawProfile) return null;
+    if (isDeveloper) {
+      if (!activeCompanyId) return rawProfile;
+      return {
+        ...rawProfile,
+        role: "admin",
+        company_id: activeCompanyId,
+        department_id: null,
+        department_supervises_all: false,
+      };
+    }
+    return { ...rawProfile, department_supervises_all: !!departmentFlagQuery.data };
+  }, [rawProfile, isDeveloper, activeCompanyId, departmentFlagQuery.data]);
 
   const companyQuery = useQuery({
     queryKey: ["company", companyId],
@@ -94,8 +132,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   // Keep formatters in sync with the company timezone before children render.
   if (company?.timezone) setCompanyTimezone(company.timezone);
 
-  const isDeveloper = profile?.role === "developer";
-
   const value = useMemo<SessionValue>(
     () => ({
       ready,
@@ -105,13 +141,28 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       profileLoading: !!userId && profileQuery.isLoading,
       company,
       isDeveloper,
+      activeCompanyId,
+      inCompany,
+      contextLoading: isDeveloper && developerContextQuery.isLoading,
       refreshProfile: () => profileQuery.refetch(),
+      enterCompany: async (nextCompanyId: string) => {
+        const { error } = await supabase.rpc("developer_enter_company", { p_company: nextCompanyId });
+        if (error) throw error;
+        queryClient.setQueryData(["developer-active-company", userId], nextCompanyId);
+        await queryClient.invalidateQueries();
+      },
+      exitCompany: async () => {
+        const { error } = await supabase.rpc("developer_exit_company");
+        if (error) throw error;
+        queryClient.setQueryData(["developer-active-company", userId], null);
+        await queryClient.invalidateQueries();
+      },
       signOut: async () => {
         await supabase.auth.signOut();
         queryClient.clear();
       },
     }),
-    [ready, session, userId, effectiveProfile, profileQuery, company, isDeveloper, queryClient],
+    [ready, session, userId, effectiveProfile, profileQuery, company, isDeveloper, activeCompanyId, inCompany, developerContextQuery.isLoading, queryClient],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

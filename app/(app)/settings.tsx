@@ -38,8 +38,9 @@ export default function SettingsScreen() {
 
 function AccountCard() {
   const me = useMe();
-  const { signOut } = useSession();
+  const { signOut, isDeveloper, inCompany, company, exitCompany } = useSession();
   const { departmentMap } = useLookups();
+  const toast = useToast();
   const [editing, setEditing] = useState(false);
   const dept = me.department_id ? departmentMap.get(me.department_id) : null;
   return (
@@ -53,15 +54,41 @@ function AccountCard() {
           </T>
           <T className="text-[12.5px] text-muted">{me.email}</T>
           <T className="text-[12.5px] text-muted">
-            {ROLE_LABELS[me.role]}
-            {dept ? ` · ${dept.name}` : ""}
+            {isDeveloper
+              ? inCompany
+                ? `حساب المطور · مدير ${company?.name ?? "الشركة"}`
+                : "حساب المطور"
+              : ROLE_LABELS[me.role]}
+            {!isDeveloper && dept ? ` · ${dept.name}` : ""}
             {me.job_title ? ` · ${me.job_title}` : ""}
           </T>
         </View>
       </View>
-      <T className="text-[12.5px] text-muted">{ROLE_HINTS[me.role]}</T>
+      <T className="text-[12.5px] text-muted">
+        {isDeveloper
+          ? inCompany
+            ? "تعمل الآن بصلاحيات مدير الشركة كاملة داخل هذه الشركة، مع بقاء صلاحياتك على المنصة."
+            : ROLE_HINTS.developer
+          : ROLE_HINTS[me.role]}
+      </T>
       <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
         <Button title="تعديل بياناتي" icon="edit-2" variant="secondary" size="sm" onPress={() => setEditing(true)} />
+        {inCompany ? (
+          <Button
+            title="الخروج إلى حساب المطور"
+            icon="log-out"
+            variant="secondary"
+            size="sm"
+            onPress={async () => {
+              try {
+                await exitCompany();
+                toast.show("خرجت من الشركة إلى حساب المطور");
+              } catch (e) {
+                toast.show(errorMessage(e), "error");
+              }
+            }}
+          />
+        ) : null}
         <Button title="تسجيل الخروج" icon="log-out" variant="danger" size="sm" onPress={signOut} />
       </View>
       <EditMemberSheet visible={editing} onClose={() => setEditing(false)} member={me} />

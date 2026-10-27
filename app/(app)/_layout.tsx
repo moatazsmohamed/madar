@@ -6,13 +6,14 @@ import { Button, C, Loading, T } from "@/components/madar/ui";
 import { useSession } from "@/lib/madar/session";
 
 export default function AppLayout() {
-  const { ready, session, profile, profileLoading, company, signOut, refreshProfile } = useSession();
+  const { ready, session, profile, profileLoading, company, signOut, refreshProfile, isDeveloper, inCompany, contextLoading } =
+    useSession();
   const pathname = usePathname();
 
-  if (!ready || profileLoading) return <Loading />;
+  if (!ready || profileLoading || contextLoading) return <Loading />;
   if (!session) return <Redirect href="/login" />;
 
-  if (profile && profile.role !== "developer" && company?.status === "suspended") {
+  if (!isDeveloper && profile && company?.status === "suspended") {
     return (
       <View style={{ flex: 1, backgroundColor: C.background, alignItems: "center", justifyContent: "center", padding: 24 }}>
         <View style={{ width: "100%", maxWidth: 460, backgroundColor: C.forest, borderRadius: 24, padding: 28, gap: 16, overflow: "hidden" }}>
@@ -56,7 +57,8 @@ export default function AppLayout() {
     );
   }
 
-  if (profile.role === "developer") {
+  if (isDeveloper && !inCompany) {
+    // Outside a company the developer only sees the platform area.
     // "/" is the transient pathname on a direct deep load; app/index decides the landing page.
     const allowed = pathname === "/" || pathname === "/companies" || pathname.startsWith("/company-reports") || pathname.startsWith("/settings");
     if (!allowed) return <Redirect href="/companies" />;
