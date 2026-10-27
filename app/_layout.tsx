@@ -8,7 +8,7 @@ import {
 } from "@expo-google-fonts/cairo";
 import Feather from "@expo/vector-icons/Feather";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import { DefaultTheme, Stack, ThemeProvider as NavThemeProvider } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
@@ -27,6 +27,9 @@ if (Platform.OS !== "web" && !I18nManager.isRTL) {
 }
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
+
+// Screen containers stay transparent so the sky backdrop in the app shell shows through.
+const NAV_THEME = { ...DefaultTheme, colors: { ...DefaultTheme.colors, background: "transparent" } };
 
 function ThemedStatusBar() {
   const { colorScheme } = useThemeContext();
@@ -73,11 +76,13 @@ export default function RootLayout() {
           <QueryClientProvider client={queryClient}>
             <SessionProvider>
               <ToastProvider>
-                <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: C.background } }}>
-                  <Stack.Screen name="index" />
-                  <Stack.Screen name="login" />
-                  <Stack.Screen name="(app)" />
-                </Stack>
+                <NavThemeProvider value={NAV_THEME}>
+                  <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: C.background } }}>
+                    <Stack.Screen name="index" />
+                    <Stack.Screen name="login" />
+                    <Stack.Screen name="(app)" />
+                  </Stack>
+                </NavThemeProvider>
                 <ThemedStatusBar />
               </ToastProvider>
             </SessionProvider>
