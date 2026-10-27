@@ -11,6 +11,7 @@ import {
   Field,
   InfoBox,
   Input,
+  Icon,
   Pill,
   SectionLabel,
   Select,
@@ -19,6 +20,7 @@ import {
   confirmAction,
   useIsWide,
   useToast,
+  type IconName,
 } from "@/components/madar/ui";
 import { fmtMinutes, fmtRelative } from "@/lib/madar/format";
 import { TIMEZONES } from "@/lib/madar/labels";
@@ -78,6 +80,18 @@ export default function CompaniesScreen() {
     const map = new Map<string, DeveloperCompanyStats>();
     (stats.data ?? []).forEach((row) => map.set(row.company_id, row));
     return map;
+  }, [stats.data]);
+
+  const platformTotals = useMemo(() => {
+    return (stats.data ?? []).reduce(
+      (acc, row) => ({
+        members: acc.members + row.members,
+        departments: acc.departments + row.departments,
+        openTasks: acc.openTasks + row.open_tasks,
+        review: acc.review + row.review_tasks,
+      }),
+      { members: 0, departments: 0, openTasks: 0, review: 0 },
+    );
   }, [stats.data]);
 
   if (!isDeveloper) return <Redirect href="/dashboard" />;
@@ -194,6 +208,37 @@ export default function CompaniesScreen() {
           : "حساب المطور: كل الشركات في مكان واحد — روابط الدعوة، التقارير، وحالة كل شركة."
       }
     >
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 18 }}>
+        <PlatformKpi
+          label="الشركات"
+          value={String(approved.length)}
+          hint={`${list.filter((c) => c.status === "active").length} نشطة${pending.length ? ` · ${pending.length} بانتظار الموافقة` : ""}`}
+          icon="layers"
+          tone={C.primary}
+        />
+        <PlatformKpi
+          label="الموظفون"
+          value={stats.data ? String(platformTotals.members) : "—"}
+          hint="حسابات الفرق داخل الشركات"
+          icon="users"
+          tone={C.info}
+        />
+        <PlatformKpi
+          label="الأقسام"
+          value={stats.data ? String(platformTotals.departments) : "—"}
+          hint="عبر كل الشركات"
+          icon="grid"
+          tone={C.info}
+        />
+        <PlatformKpi
+          label="مهام مفتوحة"
+          value={stats.data ? String(platformTotals.openTasks) : "—"}
+          hint={`${platformTotals.review} بانتظار المراجعة`}
+          icon="check-square"
+          tone={C.warning}
+        />
+      </View>
+
       <View style={{ flexDirection: wide ? "row" : "column", gap: 16, alignItems: wide ? "flex-start" : "stretch" }}>
         <View style={{ flex: wide ? 1.25 : undefined, gap: 12 }}>
           {inCompany ? (
@@ -431,6 +476,59 @@ function MiniStat({ label, value, color }: { label: string; value: string; color
         {value}
       </T>
       <T className="text-[11px] text-muted">{label}</T>
+    </View>
+  );
+}
+
+function PlatformKpi({
+  label,
+  value,
+  hint,
+  icon,
+  tone,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  icon: IconName;
+  tone: string;
+}) {
+  return (
+    <View
+      style={{
+        flexBasis: 190,
+        flexGrow: 1,
+        backgroundColor: C.surface,
+        borderRadius: 18,
+        borderWidth: 1,
+        borderColor: C.border,
+        padding: 16,
+        gap: 8,
+      }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <View
+          style={{
+            width: 30,
+            height: 30,
+            borderRadius: 10,
+            backgroundColor: tone + "18",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Icon name={icon} size={15} color={tone} />
+        </View>
+        <T weight="semibold" className="flex-1 text-[12.5px] text-muted" numberOfLines={1}>
+          {label}
+        </T>
+      </View>
+      <T weight="bold" style={{ fontSize: 30, lineHeight: 40, fontVariant: ["tabular-nums"] }}>
+        {value}
+      </T>
+      <T className="text-[11.5px] text-muted" numberOfLines={1}>
+        {hint}
+      </T>
     </View>
   );
 }

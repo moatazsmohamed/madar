@@ -20,7 +20,7 @@ export default function Dashboard() {
   const wide = useIsWide();
   const tasksQuery = useTasks();
   const monthsQuery = useMonths();
-  const { profiles, projects } = useLookups();
+  const { profiles, departments, projects } = useLookups();
   const activity = useRecentActivity(10);
   const [creating, setCreating] = useState(false);
   const lead = isLead(me) || me.role === "viewer";
@@ -57,6 +57,8 @@ export default function Dashboard() {
         { label: "متأخرة", value: String(data.overdue.length), hint: "تجاوزت موعد التسليم", icon: "alert-triangle", tone: C.error, onPress: () => router.push("/tasks?scope=overdue" as any) },
         { label: "بانتظار المراجعة", value: String(data.review.length), hint: "تحتاج اعتمادك", icon: "inbox", tone: C.warning, onPress: () => router.push("/tasks?scope=review" as any) },
         { label: "ساعات الفريق", value: fmtHours(data.teamMinutes), hint: "منذ بداية الأسبوع", icon: "clock", tone: C.info, onPress: () => router.push("/reports" as any) },
+        { label: "أعضاء الفريق", value: String(profiles.length), hint: "حسابات داخل الشركة", icon: "users", tone: C.info, onPress: () => router.push("/team" as any) },
+        { label: "الأقسام", value: String(departments.length), hint: "هيكل الشركة الحالي", icon: "grid", tone: C.info, onPress: () => router.push("/departments" as any) },
       ]
     : [
         { label: "مهامي المفتوحة", value: String(data.mine.length), hint: `${data.doneThisWeek.length} اكتملت هذا الأسبوع`, icon: "check-square", tone: C.primary, onPress: () => router.push("/tasks?scope=mine" as any) },
