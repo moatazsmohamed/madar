@@ -191,6 +191,8 @@ export interface TimeSession {
   created_at: string;
 }
 
+export type MessageKind = "message" | "warning";
+
 export interface NotificationItem {
   id: string;
   user_id: string;

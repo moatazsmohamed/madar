@@ -13,6 +13,7 @@ import type {
   Department,
   DeveloperCompanyStats,
   Invitation,
+  MessageKind,
   NotificationItem,
   Profile,
   Project,
@@ -691,4 +692,36 @@ export function useNotificationActions() {
     await run(supabase.from("notifications").delete().eq("user_id", userId).not("read_at", "is", null));
   }, keys);
   return { markRead, markAll, clearRead };
+}
+
+/** Messages and warnings an admin sent to a member (admin-only via RLS). */
+export function useMemberMessages(userId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ["member-messages", userId],
+    enabled: enabled && !!userId,
+    queryFn: () =>
+      run<NotificationItem[]>(
+        supabase
+          .from("notifications")
+          .select("*")
+          .eq("user_id", userId!)
+          .in("kind", ["message", "warning"])
+          .order("created_at", { ascending: false })
+          .limit(50),
+      ),
+  });
+}
+
+export function useSendMemberMessage() {
+  return useAction(
+    async (vars: { userId: string; kind: MessageKind; body: string }) =>
+      run<string>(
+        supabase.rpc("send_member_message", {
+          p_user: vars.userId,
+          p_kind: vars.kind,
+          p_body: vars.body,
+        }),
+      ),
+    [["notifications"], ["member-messages"]],
+  );
 }

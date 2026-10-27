@@ -4,7 +4,7 @@ import { View } from "react-native";
 import { Page } from "@/components/madar/shell";
 import { Button, C, Chip, EmptyState, Icon, Loading, T, Tap, alpha, confirmAction, type IconName } from "@/components/madar/ui";
 import { fmtRelative } from "@/lib/madar/format";
-import { useNotificationActions, useNotifications } from "@/lib/madar/queries";
+import { useNotificationActions, useNotifications, useLookups } from "@/lib/madar/queries";
 import { useMe } from "@/lib/madar/session";
 import type { NotificationItem } from "@/lib/madar/types";
 
@@ -16,12 +16,15 @@ const KIND: Record<string, { icon: IconName; color: string }> = {
   comment_added: { icon: "message-circle", color: C.info },
   member_pending: { icon: "user-plus", color: C.warning },
   member_approved: { icon: "smile", color: C.primary },
+  message: { icon: "message-circle", color: C.info },
+  warning: { icon: "alert-triangle", color: C.error },
 };
 
 export default function NotificationsScreen() {
   const me = useMe();
   const router = useRouter();
   const notifications = useNotifications();
+  const { profileMap } = useLookups();
   const { markRead, markAll, clearRead } = useNotificationActions();
   const [unreadOnly, setUnreadOnly] = useState(false);
   const list = (notifications.data ?? []).filter((n) => !unreadOnly || !n.read_at);
@@ -67,6 +70,8 @@ export default function NotificationsScreen() {
         <View style={{ backgroundColor: C.surface, borderRadius: 18, borderWidth: 1, borderColor: C.border, overflow: "hidden" }}>
           {list.map((n, i) => {
             const k = KIND[n.kind] ?? { icon: "bell" as IconName, color: C.muted };
+            const sender = n.actor_id ? profileMap.get(n.actor_id) : undefined;
+            const warning = n.kind === "warning";
             return (
               <Tap
                 key={n.id}
@@ -77,6 +82,8 @@ export default function NotificationsScreen() {
                   padding: 14,
                   borderTopWidth: i === 0 ? 0 : 1,
                   borderTopColor: C.border,
+                  borderRightWidth: warning ? 3 : 0,
+                  borderRightColor: C.error,
                   backgroundColor: pressed ? C.background : n.read_at ? C.surface : alpha(C["primary-soft"], 53),
                 })}
               >
@@ -90,6 +97,7 @@ export default function NotificationsScreen() {
                       {n.body}
                     </T>
                   ) : null}
+                  {sender ? <T className="text-[11.5px] text-muted">من {sender.full_name}</T> : null}
                   <T className="text-[11.5px] text-muted">{fmtRelative(n.created_at)}</T>
                 </View>
                 {!n.read_at ? <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: C.primary, marginTop: 6 }} /> : null}

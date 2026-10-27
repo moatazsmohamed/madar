@@ -2,15 +2,17 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { View } from "react-native";
 import { EditMemberSheet, ResetPasswordSheet } from "@/components/madar/member-forms";
+import { SendMessageSheet } from "@/components/madar/message-form";
 import { Page } from "@/components/madar/shell";
 import { TaskTable } from "@/components/madar/task-views";
 import { Avatar, Button, C, Card, Chip, EmptyState, Icon, Loading, Pill, SectionLabel, T, useIsWide } from "@/components/madar/ui";
-import { addDays, fmtDayFull, fmtHours, isOverdue, sessionMinutes, startOfMonth, startOfWeek, todayISO, zonedToUtc, addMonths } from "@/lib/madar/format";
+import { addDays, fmtDayFull, fmtHours, fmtRelative, isOverdue, sessionMinutes, startOfMonth, startOfWeek, todayISO, zonedToUtc, addMonths } from "@/lib/madar/format";
 import { MEMBER_STATUS_LABELS, ROLE_HINTS, ROLE_LABELS } from "@/lib/madar/labels";
 import { isAdmin } from "@/lib/madar/permissions";
-import { useLookups, useSessionsBetween, useTasks } from "@/lib/madar/queries";
+import { useLookups, useMemberMessages, useSessionsBetween, useTasks } from "@/lib/madar/queries";
 import { useMe } from "@/lib/madar/session";
 import { sortTasks, useMinutesMap } from "@/lib/madar/task-utils";
+import type { MessageKind } from "@/lib/madar/types";
 
 export default function MemberScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -22,8 +24,11 @@ export default function MemberScreen() {
   const wide = useIsWide(760);
   const [editing, setEditing] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [messageKind, setMessageKind] = useState<MessageKind | null>(null);
   const [filter, setFilter] = useState<"open" | "done" | "all">("open");
   const member = id ? profileMap.get(id) : undefined;
+  const canMessage = isAdmin(me) && !!id && id !== me.id;
+  const messages = useMemberMessages(id, canMessage);
   const back = () => (router.canGoBack() ? router.back() : router.replace("/team" as any));
 
   const today = todayISO();
@@ -85,6 +90,8 @@ export default function MemberScreen() {
         <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
           {canEditInfo ? <Button title="تعديل" icon="edit-2" variant="secondary" size="sm" onPress={() => setEditing(true)} /> : null}
           {canReset ? <Button title="كلمة مرور جديدة" icon="key" variant="secondary" size="sm" onPress={() => setResetting(true)} /> : null}
+          {canMessage ? <Button title="رسالة" icon="message-circle" variant="secondary" size="sm" onPress={() => setMessageKind("message")} /> : null}
+          {canMessage ? <Button title="تحذير" icon="alert-triangle" variant="danger" size="sm" onPress={() => setMessageKind("warning")} /> : null}
         </View>
       </Card>
       <T className="mb-4 text-[12.5px] text-muted">{ROLE_HINTS[member.role]}</T>
@@ -95,6 +102,56 @@ export default function MemberScreen() {
         <Stat label="ساعات الأسبوع" value={fmtHours(weekMinutes)} />
         <Stat label="ساعات الشهر" value={fmtHours(monthMinutes)} />
       </View>
+      {canMessage ? (
+        <Card style={{ gap: 8, marginBottom: 18 }}>
+          <SectionLabel>الرسائل والتحذيرات</SectionLabel>
+          {messages.isLoading ? (
+            <Loading />
+          ) : (messages.data ?? []).length === 0 ? (
+            <T className="text-[12.5px] text-muted">لم تُرسل أي رسالة لهذا العضو بعد.</T>
+          ) : (
+            (messages.data ?? []).slice(0, 6).map((m, i) => {
+              const warning = m.kind === "warning";
+              return (
+                <View
+                  key={m.id}
+                  style={{
+                    flexDirection: "row",
+                    gap: 10,
+                    alignItems: "flex-start",
+                    paddingVertical: 8,
+                    borderTopWidth: i === 0 ? 0 : 1,
+                    borderTopColor: C.border,
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 30,
+                      height: 30,
+                      borderRadius: 10,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      backgroundColor: warning ? C["error-soft"] : C["info-soft"],
+                    }}
+                  >
+                    <Icon name={warning ? "alert-triangle" : "message-circle"} size={15} color={warning ? C.error : C.info} />
+                  </View>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <T weight="semibold" className="text-[13px]">
+                      {m.title}
+                    </T>
+                    <T className="text-[12.5px]">{m.body}</T>
+                    <T className="text-[11px] text-muted">
+                      {fmtRelative(m.created_at)} · {m.read_at ? "قرأها العضو" : "لم تُقرأ بعد"}
+                    </T>
+                  </View>
+                </View>
+              );
+            })
+          )}
+          <T className="text-[11.5px] text-muted">تظهر الرسائل للعضو في صفحة الإشعارات فور إرسالها.</T>
+        </Card>
+      ) : null}
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
         <SectionLabel className="flex-1">المهام المسندة</SectionLabel>
         <Chip label={`المفتوحة (${open.length})`} active={filter === "open"} onPress={() => setFilter("open")} />
@@ -104,6 +161,14 @@ export default function MemberScreen() {
       {tasksQuery.isLoading ? <Loading /> : <TaskTable tasks={list} minutes={minutes} empty={<EmptyState icon="check-square" title="لا توجد مهام هنا" />} />}
       <EditMemberSheet visible={editing} onClose={() => setEditing(false)} member={member} />
       {canReset ? <ResetPasswordSheet visible={resetting} onClose={() => setResetting(false)} member={member} /> : null}
+      {canMessage ? (
+        <SendMessageSheet
+          visible={!!messageKind}
+          initialKind={messageKind ?? "message"}
+          onClose={() => setMessageKind(null)}
+          member={member}
+        />
+      ) : null}
     </Page>
   );
 }

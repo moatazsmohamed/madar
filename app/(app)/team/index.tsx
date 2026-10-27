@@ -2,6 +2,7 @@ import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { View } from "react-native";
 import { AddMemberSheet, ApproveSheet } from "@/components/madar/member-forms";
+import { SendMessageSheet } from "@/components/madar/message-form";
 import { Page } from "@/components/madar/shell";
 import { Avatar, Button, C, Card, Chip, EmptyState, IconButton, Input, Loading, Pill, SearchInput, SectionLabel, T, Tap, alpha, confirmAction, useIsWide, useToast } from "@/components/madar/ui";
 import { fmtRelative, isOverdue } from "@/lib/madar/format";
@@ -31,6 +32,7 @@ export default function TeamScreen() {
   const [showDisabled, setShowDisabled] = useState(false);
   const [adding, setAdding] = useState(false);
   const [approving, setApproving] = useState<Profile | null>(null);
+  const [messaging, setMessaging] = useState<Profile | null>(null);
 
   const all = profilesQuery.data ?? [];
   const pending = all.filter((p) => p.status === "pending");
@@ -112,9 +114,8 @@ export default function TeamScreen() {
             const late = open.filter((t) => isOverdue(t)).length;
             const d = p.department_id ? departmentMap.get(p.department_id) : null;
             return (
-              <Tap
+              <View
                 key={p.id}
-                onPress={() => router.push(`/team/${p.id}` as any)}
                 style={{
                   flexBasis: wide ? 300 : "100%",
                   flexGrow: 1,
@@ -125,37 +126,50 @@ export default function TeamScreen() {
                   borderColor: C.border,
                   padding: 14,
                   flexDirection: "row",
-                  gap: 12,
+                  gap: 8,
                   alignItems: "center",
                   opacity: p.status === "disabled" ? 0.6 : 1,
                 }}
               >
-                <Avatar id={p.id} name={p.full_name} size={46} />
-                <View style={{ flex: 1, gap: 3 }}>
-                  <T weight="bold" numberOfLines={1}>
-                    {p.full_name}
-                    {p.id === me.id ? <T className="text-[12px] text-muted"> (أنت)</T> : null}
-                  </T>
-                  <T className="text-[12px] text-muted" numberOfLines={1}>
-                    {[p.job_title, d?.name].filter(Boolean).join(" · ") || "—"}
-                  </T>
-                  <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
-                    <Pill label={ROLE_LABELS[p.role]} tone={p.role === "admin" ? "primary" : p.role === "manager" ? "info" : p.role === "supervisor" ? "warning" : "neutral"} />
-                    {p.status === "disabled" ? <Pill label={MEMBER_STATUS_LABELS.disabled} tone="error" /> : null}
-                  </View>
-                </View>
-                <View style={{ alignItems: "center", minWidth: 50 }}>
-                  <T weight="bold" style={{ fontSize: 20, lineHeight: 28 }}>
-                    {open.length}
-                  </T>
-                  <T className="text-[10.5px] text-muted">مفتوحة</T>
-                  {late ? (
-                    <T weight="semibold" className="text-[10.5px]" style={{ color: C.error }}>
-                      {late} متأخرة
+                <Tap
+                  onPress={() => router.push(`/team/${p.id}` as any)}
+                  style={{ flex: 1, flexDirection: "row", gap: 12, alignItems: "center" }}
+                >
+                  <Avatar id={p.id} name={p.full_name} size={46} />
+                  <View style={{ flex: 1, gap: 3 }}>
+                    <T weight="bold" numberOfLines={1}>
+                      {p.full_name}
+                      {p.id === me.id ? <T className="text-[12px] text-muted"> (أنت)</T> : null}
                     </T>
-                  ) : null}
-                </View>
-              </Tap>
+                    <T className="text-[12px] text-muted" numberOfLines={1}>
+                      {[p.job_title, d?.name].filter(Boolean).join(" · ") || "—"}
+                    </T>
+                    <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
+                      <Pill label={ROLE_LABELS[p.role]} tone={p.role === "admin" ? "primary" : p.role === "manager" ? "info" : p.role === "supervisor" ? "warning" : "neutral"} />
+                      {p.status === "disabled" ? <Pill label={MEMBER_STATUS_LABELS.disabled} tone="error" /> : null}
+                    </View>
+                  </View>
+                  <View style={{ alignItems: "center", minWidth: 50 }}>
+                    <T weight="bold" style={{ fontSize: 20, lineHeight: 28 }}>
+                      {open.length}
+                    </T>
+                    <T className="text-[10.5px] text-muted">مفتوحة</T>
+                    {late ? (
+                      <T weight="semibold" className="text-[10.5px]" style={{ color: C.error }}>
+                        {late} متأخرة
+                      </T>
+                    ) : null}
+                  </View>
+                </Tap>
+                {admin && p.id !== me.id ? (
+                  <IconButton
+                    icon="message-circle"
+                    label={`إرسال رسالة إلى ${p.full_name}`}
+                    color={C.muted}
+                    onPress={() => setMessaging(p)}
+                  />
+                ) : null}
+              </View>
             );
           })}
         </View>
@@ -191,6 +205,7 @@ export default function TeamScreen() {
 
       <AddMemberSheet visible={adding} onClose={() => setAdding(false)} />
       <ApproveSheet visible={!!approving} onClose={() => setApproving(null)} member={approving} />
+      {admin ? <SendMessageSheet visible={!!messaging} onClose={() => setMessaging(null)} member={messaging} /> : null}
     </Page>
   );
 }
