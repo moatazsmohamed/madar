@@ -6,7 +6,7 @@ Every business rule lives in PostgreSQL: row-level security, guard triggers and 
 
 `Expo Router` `React Native` `TypeScript` `Supabase` `PostgreSQL RLS` `NativeWind` `Arabic RTL`
 
-🌐 Live: <https://madar-three-liart.vercel.app> · 📖 English architecture notes: [plan.md](plan.md)
+🌐 Live: <https://madar-m.vercel.app> · 📖 English architecture notes: [plan.md](plan.md)
 
 ---
 

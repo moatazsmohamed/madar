@@ -1,6 +1,6 @@
 import { Platform, Share } from "react-native";
 
-const FALLBACK_ORIGIN = "https://madar-three-liart.vercel.app";
+const FALLBACK_ORIGIN = "https://madar-m.vercel.app";
 
 export function appOrigin() {
   if (Platform.OS === "web" && typeof window !== "undefined") return window.location.origin;
