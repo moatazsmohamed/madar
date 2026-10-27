@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Redirect, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LogoMark, OrbitDecor, Wordmark } from "@/components/madar/logo";
@@ -48,7 +48,9 @@ function readCounts(): LiveCounts {
       typeof stored.tasks === "number" &&
       typeof stored.at === "number"
     ) {
-      return growCounts(stored);
+      const grown = growCounts(stored);
+      grown.tasks += 1 + Math.floor(Math.random() * 2);
+      return grown;
     }
   } catch {
     // storage can be blocked; fall back to a fresh seed
@@ -65,12 +67,45 @@ function saveCounts(counts: LiveCounts) {
   }
 }
 
+function useCountUp(counts: LiveCounts) {
+  const [shown, setShown] = useState({ companies: 0, members: 0, tasks: 0 });
+  const shownRef = useRef(shown);
+  useEffect(() => {
+    const start = shownRef.current;
+    const target = { companies: counts.companies, members: counts.members, tasks: counts.tasks };
+    if (start.companies === target.companies && start.members === target.members && start.tasks === target.tasks) {
+      return;
+    }
+    let frame = 0;
+    const startedAt = Date.now();
+    const duration = 1400;
+    const step = () => {
+      const progress = Math.min((Date.now() - startedAt) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const next = {
+        companies: Math.round(start.companies + (target.companies - start.companies) * eased),
+        members: Math.round(start.members + (target.members - start.members) * eased),
+        tasks: Math.round(start.tasks + (target.tasks - start.tasks) * eased),
+      };
+      shownRef.current = next;
+      setShown(next);
+      if (progress < 1) {
+        frame = requestAnimationFrame(step);
+      }
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [counts.companies, counts.members, counts.tasks]);
+  return shown;
+}
+
 function LiveStats({ inverted = false }: { inverted?: boolean }) {
   const [counts, setCounts] = useState<LiveCounts>(() => {
     const initial = readCounts();
     saveCounts(initial);
     return initial;
   });
+  const shown = useCountUp(counts);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -84,9 +119,9 @@ function LiveStats({ inverted = false }: { inverted?: boolean }) {
   }, []);
 
   const items = [
-    { label: "شركات", value: counts.companies },
-    { label: "موظفين", value: counts.members },
-    { label: "مهام", value: counts.tasks },
+    { label: "شركات", value: shown.companies },
+    { label: "موظفين", value: shown.members },
+    { label: "مهام", value: shown.tasks },
   ];
   const numberColor = inverted ? "#F4F1EA" : C.foreground;
   const labelColor = inverted ? "#9FB5AA" : C.muted;
