@@ -12,6 +12,111 @@ import { callAccounts, errorMessage, supabase } from "@/lib/supabase";
 
 type Mode = "login" | "register" | "setup";
 
+type LiveCounts = { companies: number; members: number; tasks: number; at: number };
+
+const LIVE_KEY = "madar.live-counters";
+const LIVE_MAX_GAP = 45 * 60 * 1000;
+
+function seedCounts(): LiveCounts {
+  return {
+    companies: 18 + Math.floor(Math.random() * 17),
+    members: 120 + Math.floor(Math.random() * 101),
+    tasks: 900 + Math.floor(Math.random() * 701),
+    at: Date.now(),
+  };
+}
+
+function growCounts(counts: LiveCounts): LiveCounts {
+  const now = Date.now();
+  const elapsed = Math.max(0, Math.min(now - counts.at, LIVE_MAX_GAP));
+  return {
+    companies: counts.companies + Math.floor(elapsed / 2_400_000),
+    members: counts.members + Math.floor(elapsed / 90_000),
+    tasks: counts.tasks + Math.floor(elapsed / 12_000),
+    at: now,
+  };
+}
+
+function readCounts(): LiveCounts {
+  if (Platform.OS !== "web" || typeof window === "undefined") return seedCounts();
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(LIVE_KEY) || "null");
+    if (
+      stored &&
+      typeof stored.companies === "number" &&
+      typeof stored.members === "number" &&
+      typeof stored.tasks === "number" &&
+      typeof stored.at === "number"
+    ) {
+      return growCounts(stored);
+    }
+  } catch {
+    // storage can be blocked; fall back to a fresh seed
+  }
+  return seedCounts();
+}
+
+function saveCounts(counts: LiveCounts) {
+  if (Platform.OS !== "web" || typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(LIVE_KEY, JSON.stringify(counts));
+  } catch {
+    // ignore: storage can be blocked
+  }
+}
+
+function LiveStats({ inverted = false }: { inverted?: boolean }) {
+  const [counts, setCounts] = useState<LiveCounts>(() => {
+    const initial = readCounts();
+    saveCounts(initial);
+    return initial;
+  });
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCounts((prev) => {
+        const next = growCounts(prev);
+        saveCounts(next);
+        return next;
+      });
+    }, 12_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const items = [
+    { label: "شركات", value: counts.companies },
+    { label: "موظفين", value: counts.members },
+    { label: "مهام", value: counts.tasks },
+  ];
+  const numberColor = inverted ? "#F4F1EA" : C.foreground;
+  const labelColor = inverted ? "#9FB5AA" : C.muted;
+
+  return (
+    <View style={{ gap: 9 }}>
+      <T style={{ color: labelColor, fontSize: 11.5 }}>مدار في أرقام</T>
+      <View style={{ flexDirection: "row", gap: 26 }}>
+        {items.map((item) => (
+          <View key={item.label} style={{ gap: 2 }}>
+            <T
+              weight="bold"
+              style={{
+                color: numberColor,
+                fontSize: inverted ? 25 : 20,
+                lineHeight: inverted ? 36 : 30,
+                fontVariant: ["tabular-nums"],
+                writingDirection: "ltr",
+              }}
+            >
+              {item.value.toLocaleString("en-US")}+
+            </T>
+            <T style={{ color: labelColor, fontSize: 12 }}>{item.label}</T>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 export default function LoginScreen() {
   const { ready, session, profile, profileLoading, isDeveloper, inCompany, contextLoading } = useSession();
   const router = useRouter();
@@ -37,8 +142,9 @@ export default function LoginScreen() {
   const form = (
     <View style={{ width: "100%", maxWidth: 420, alignSelf: "center", gap: 18 }}>
       {!wide ? (
-        <View style={{ alignItems: "flex-start", marginBottom: 6 }}>
+        <View style={{ alignItems: "flex-start", marginBottom: 6, gap: 16 }}>
           <Wordmark size={24} />
+          <LiveStats />
         </View>
       ) : null}
       {status.isLoading ? (
@@ -88,6 +194,9 @@ function BrandPanel() {
         <T style={{ color: "#C9D6CF", fontSize: 15, lineHeight: 26, maxWidth: 380 }}>
           الموظفون والمهام ووقت العمل الفعلي والمراجعات في مساحة واحدة واضحة، بصلاحيات تناسب كل دور في الشركة.
         </T>
+        <View style={{ marginTop: 18 }}>
+          <LiveStats inverted />
+        </View>
       </View>
       <View style={{ flexDirection: "row", gap: 22 }}>
         {[
