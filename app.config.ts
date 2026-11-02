@@ -88,6 +88,7 @@ const config: ExpoConfig = {
   web: {
     bundler: "metro",
     output: "single",
+    lang: "ar",
     favicon: "./assets/images/favicon.png",
   },
   plugins: [
