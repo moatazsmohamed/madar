@@ -18,6 +18,18 @@ const KIND: Record<string, { icon: IconName; color: string }> = {
   member_approved: { icon: "smile", color: C.primary },
   message: { icon: "message-circle", color: C.info },
   warning: { icon: "alert-triangle", color: C.error },
+  points_granted: { icon: "award", color: C.success },
+  points_auto_earned: { icon: "trending-up", color: C.success },
+  points_approved: { icon: "check-circle", color: C.success },
+  points_rejected: { icon: "x-circle", color: C.error },
+  points_pending_request: { icon: "clock", color: C.warning },
+  points_corrected: { icon: "corner-up-left", color: C.info },
+  points_expired: { icon: "alert-triangle", color: C.warning },
+  points_redeemed: { icon: "gift", color: C.primary },
+  points_redemption_request: { icon: "gift", color: C.warning },
+  points_redemption_rejected: { icon: "gift", color: C.error },
+  points_redemption_fulfilled: { icon: "gift", color: C.success },
+  points_redemption_refunded: { icon: "corner-up-left", color: C.info },
 };
 
 export default function NotificationsScreen() {
@@ -34,6 +46,7 @@ export default function NotificationsScreen() {
     if (!n.read_at) markRead.mutate(n.id);
     if (n.task_id) router.push(`/tasks/${n.task_id}` as any);
     else if (n.kind === "member_pending") router.push("/team" as any);
+    else if (n.kind.startsWith("points_")) router.push("/points" as any);
   };
 
   return (

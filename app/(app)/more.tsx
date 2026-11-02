@@ -16,6 +16,7 @@ export default function MoreScreen() {
   const seesCompany = me.role === "admin" || me.role === "manager" || me.role === "supervisor" || me.role === "viewer";
   const items: { href: string; label: string; hint: string; icon: IconName; badge?: number }[] = [
     { href: "/notifications", label: "الإشعارات", hint: "الإسنادات والمراجعات والتعليقات", icon: "bell", badge: unread },
+    { href: "/points", label: "النقاط والمكافآت", hint: "رصيدك، طلباتك، والمكافآت المتاحة", icon: "award" },
     { href: "/reports", label: "التقارير", hint: "الساعات الفعلية والإنجاز والتصدير", icon: "bar-chart-2" },
     ...(seesCompany
       ? [{ href: "/departments", label: "الأقسام", hint: "هيكل الشركة وحمل العمل", icon: "layers" as IconName }]

@@ -25,6 +25,7 @@ const NAV: NavItem[] = [
   { href: "/team", label: "الفريق", icon: "users", roles: COMPANY_WIDE },
   { href: "/departments", label: "الأقسام", icon: "layers", roles: COMPANY_WIDE },
   { href: "/reports", label: "التقارير", icon: "bar-chart-2" },
+  { href: "/points", label: "النقاط", icon: "award" },
   { href: "/notifications", label: "الإشعارات", icon: "bell" },
   { href: "/settings", label: "الإعدادات", icon: "settings" },
 ];
@@ -52,7 +53,7 @@ const DEV_DOCK: NavItem[] = [
   { href: "/settings", label: "الإعدادات", icon: "settings" },
 ];
 
-const MORE_PATHS = ["/more", "/departments", "/reports", "/notifications", "/settings"];
+const MORE_PATHS = ["/more", "/points", "/departments", "/reports", "/notifications", "/settings"];
 
 function isActive(pathname: string, href: string) {
   if (href === "/more") return MORE_PATHS.some((p) => pathname.startsWith(p));

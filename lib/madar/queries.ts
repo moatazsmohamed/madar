@@ -832,7 +832,7 @@ export function usePointEntries(
   enabled = true,
 ) {
   return useQuery({
-    queryKey: ["point-entries", opts.member ?? null, opts.status ?? null],
+    queryKey: ["point-entries", opts.member ?? null, opts.status ?? null, opts.rule ?? null],
     enabled,
     queryFn: () => {
       let query = supabase.from("point_entries").select("*").order("created_at", { ascending: false }).limit(300);
