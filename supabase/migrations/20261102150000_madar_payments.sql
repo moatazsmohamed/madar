@@ -30,11 +30,16 @@ create index payments_employee_idx on public.payments (employee_id, status);
 
 alter table public.payments enable row level security;
 
+-- كل سياسة تُقفل على شركة المستخدم أولًا، مثل بقية سياسات مدار
 create policy payments_select on public.payments for select to authenticated
-  using (employee_id = (select auth.uid()) or public.is_admin());
+  using (
+    company_id = public.my_company()
+    and (employee_id = (select auth.uid()) or public.is_admin())
+  );
 create policy payments_insert on public.payments for insert to authenticated
-  with check (public.is_admin());
+  with check (company_id = public.my_company() and public.is_admin());
 create policy payments_update on public.payments for update to authenticated
-  using (public.is_admin()) with check (public.is_admin());
+  using (company_id = public.my_company() and public.is_admin())
+  with check (company_id = public.my_company() and public.is_admin());
 create policy payments_delete on public.payments for delete to authenticated
-  using (public.is_admin());
+  using (company_id = public.my_company() and public.is_admin());
