@@ -14,9 +14,19 @@ import type {
   DeveloperCompanyStats,
   Invitation,
   MessageKind,
+  MyPoints,
   NotificationItem,
+  PointBalanceRow,
+  PointEntry,
+  PointEntryStatus,
+  PointEventKey,
+  PointPeriodKind,
+  PointRule,
+  PointSettings,
   Profile,
   Project,
+  Redemption,
+  Reward,
   Role,
   Subtask,
   Task,
@@ -743,3 +753,324 @@ export function useSendMemberMessage() {
     [["notifications"], ["member-messages"]],
   );
 }
+
+// ---------------------------------------------------------------- points reads
+
+/** Every points write moves the ledger, so it touches the standing, the balances and the queues. */
+const POINT_KEYS: QueryKey[] = [
+  ["my-points"],
+  ["point-balances"],
+  ["point-entries"],
+  ["redemptions"],
+  ["rewards"],
+  ["notifications"],
+];
+const POINT_CONFIG_KEYS: QueryKey[] = [["point-settings"], ["point-rules"], ...POINT_KEYS];
+
+/** One row per company; null until the admin saves the settings for the first time. */
+export function usePointSettings(enabled = true) {
+  const { userId } = useSession();
+  return useQuery({
+    queryKey: ["point-settings", userId],
+    enabled,
+    queryFn: () => run<PointSettings | null>(supabase.from("point_settings").select("*").limit(1).maybeSingle()),
+    staleTime: 60_000,
+  });
+}
+
+export function usePointRules(enabled = true) {
+  return useQuery({
+    queryKey: ["point-rules"],
+    enabled,
+    queryFn: () =>
+      run<PointRule[]>(supabase.from("point_rules").select("*").order("event_key").order("name").limit(200)),
+    staleTime: 60_000,
+  });
+}
+
+export function useRewards(enabled = true) {
+  return useQuery({
+    queryKey: ["rewards"],
+    enabled,
+    queryFn: () =>
+      run<Reward[]>(
+        supabase.from("rewards").select("*").order("cost_points", { ascending: true }).order("name").limit(300),
+      ),
+    staleTime: 60_000,
+  });
+}
+
+/** My standing, computed by the server from the ledger. */
+export function useMyPoints() {
+  const { userId } = useSession();
+  return useQuery({
+    queryKey: ["my-points", userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("my_points");
+      if (error) throw error;
+      return (data ?? [])[0] as MyPoints | undefined;
+    },
+  });
+}
+
+/** Balances for the members this caller is allowed to see — the same join RLS applies to point_entries. */
+export function usePointBalances(enabled = true) {
+  return useQuery({
+    queryKey: ["point-balances"],
+    enabled,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("point_balances");
+      if (error) throw error;
+      return (data ?? []) as PointBalanceRow[];
+    },
+  });
+}
+
+export function usePointEntries(
+  opts: { member?: string | null; status?: PointEntryStatus | null; rule?: PointEventKey | null } = {},
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: ["point-entries", opts.member ?? null, opts.status ?? null],
+    enabled,
+    queryFn: () => {
+      let query = supabase.from("point_entries").select("*").order("created_at", { ascending: false }).limit(300);
+      if (opts.member) query = query.eq("member_id", opts.member);
+      if (opts.status) query = query.eq("status", opts.status);
+      if (opts.rule) query = query.in("source", ["rule"]);
+      return run<PointEntry[]>(query);
+    },
+  });
+}
+
+export function useRedemptions(scope: "mine" | "company" = "mine", enabled = true) {
+  const { userId } = useSession();
+  return useQuery({
+    queryKey: ["redemptions", scope, userId],
+    enabled: enabled && !!userId,
+    queryFn: () => {
+      let query = supabase.from("redemptions").select("*").order("created_at", { ascending: false }).limit(300);
+      if (scope === "mine") query = query.eq("member_id", userId!);
+      return run<Redemption[]>(query);
+    },
+  });
+}
+
+// ---------------------------------------------------------------- points writes
+
+export function useSavePointSettings() {
+  return useAction(
+    async (vars: {
+      enabled: boolean;
+      unitLabel: string;
+      unitSymbol: string;
+      requireApproval: boolean;
+      periodKind: PointPeriodKind;
+      cap: number | null;
+      expiryDays: number | null;
+      minRedeem: number | null;
+    }) => {
+      const { data, error } = await supabase.rpc("save_point_settings", {
+        p_enabled: vars.enabled,
+        p_unit_label: vars.unitLabel,
+        p_unit_symbol: vars.unitSymbol,
+        p_require_approval: vars.requireApproval,
+        p_period_kind: vars.periodKind,
+        p_cap: vars.cap,
+        p_expiry_days: vars.expiryDays,
+        p_min_redeem: vars.minRedeem,
+      });
+      if (error) throw error;
+      return data as PointSettings;
+    },
+    POINT_CONFIG_KEYS,
+  );
+}
+
+export function useSavePointRule() {
+  return useAction(
+    async (vars: {
+      id: string | null;
+      eventKey: PointEventKey;
+      name: string;
+      description: string | null;
+      points: number;
+      enabled: boolean;
+      requireApproval: boolean | null;
+      maxPerMember: number | null;
+      startsOn: string | null;
+      endsOn: string | null;
+    }) => {
+      const { data, error } = await supabase.rpc("save_point_rule", {
+        p_id: vars.id,
+        p_event_key: vars.eventKey,
+        p_name: vars.name,
+        p_description: vars.description,
+        p_points: vars.points,
+        p_enabled: vars.enabled,
+        p_require_approval: vars.requireApproval,
+        p_max_per_member: vars.maxPerMember,
+        p_starts_on: vars.startsOn,
+        p_ends_on: vars.endsOn,
+      });
+      if (error) throw error;
+      return data as PointRule;
+    },
+    POINT_CONFIG_KEYS,
+  );
+}
+
+export function useSaveReward() {
+  return useAction(
+    async (vars: {
+      id: string | null;
+      name: string;
+      description: string | null;
+      cost: number;
+      stock: number | null;
+      perMemberMax: number | null;
+      enabled: boolean;
+    }) => {
+      const { data, error } = await supabase.rpc("save_reward", {
+        p_id: vars.id,
+        p_name: vars.name,
+        p_description: vars.description,
+        p_cost: vars.cost,
+        p_stock: vars.stock,
+        p_per_member_max: vars.perMemberMax,
+        p_enabled: vars.enabled,
+      });
+      if (error) throw error;
+      return data as Reward;
+    },
+    [["rewards"], ...POINT_KEYS],
+  );
+}
+
+/** Grant or deduct for a member; the token makes a double click replay the same entry. */
+export function useGrantPoints() {
+  return useAction(
+    async (vars: { member: string; points: number | null; reason: string; requestId: string }) => {
+      const { data, error } = await supabase.rpc("grant_points", {
+        p_member: vars.member,
+        p_points: vars.points,
+        p_reason: vars.reason,
+        p_request_id: vars.requestId,
+      });
+      if (error) throw error;
+      return data as PointEntry;
+    },
+    POINT_KEYS,
+  );
+}
+
+export function useRequestPoints() {
+  return useAction(
+    async (vars: { points: number; reason: string; requestId: string }) => {
+      const { data, error } = await supabase.rpc("request_points", {
+        p_points: vars.points,
+        p_reason: vars.reason,
+        p_request_id: vars.requestId,
+      });
+      if (error) throw error;
+      return data as PointEntry;
+    },
+    POINT_KEYS,
+  );
+}
+
+export function useDecidePointEntry() {
+  return useAction(
+    async (vars: { id: string; approve: boolean; note?: string | null }) => {
+      const { data, error } = await supabase.rpc("decide_point_entry", {
+        p_entry: vars.id,
+        p_approve: vars.approve,
+        p_note: vars.note ?? null,
+      });
+      if (error) throw error;
+      return data as PointEntry;
+    },
+    POINT_KEYS,
+  );
+}
+
+/** A correction is a new reverse row — history is never rewritten. */
+export function useCorrectPointEntry() {
+  return useAction(
+    async (vars: { id: string; note: string }) => {
+      const { data, error } = await supabase.rpc("correct_point_entry", { p_entry: vars.id, p_note: vars.note });
+      if (error) throw error;
+      return data as PointEntry;
+    },
+    POINT_KEYS,
+  );
+}
+
+export function useRedeemReward() {
+  return useAction(
+    async (vars: { reward: string; requestId: string }) => {
+      const { data, error } = await supabase.rpc("redeem_reward", {
+        p_reward: vars.reward,
+        p_request_id: vars.requestId,
+      });
+      if (error) throw error;
+      return data as Redemption;
+    },
+    POINT_KEYS,
+  );
+}
+
+export function useDecideRedemption() {
+  return useAction(
+    async (vars: { id: string; approve: boolean; note?: string | null }) => {
+      const { data, error } = await supabase.rpc("decide_redemption", {
+        p_redemption: vars.id,
+        p_approve: vars.approve,
+        p_note: vars.note ?? null,
+      });
+      if (error) throw error;
+      return data as Redemption;
+    },
+    POINT_KEYS,
+  );
+}
+
+export function useFulfilRedemption() {
+  return useAction(
+    async (vars: { id: string; note?: string | null }) => {
+      const { data, error } = await supabase.rpc("fulfil_redemption", {
+        p_redemption: vars.id,
+        p_note: vars.note ?? null,
+      });
+      if (error) throw error;
+      return data as Redemption;
+    },
+    POINT_KEYS,
+  );
+}
+
+/** Cancels a delivered reward and returns the points as a fresh reverse row. */
+export function useRefundRedemption() {
+  return useAction(
+    async (vars: { id: string; note: string }) => {
+      const { data, error } = await supabase.rpc("refund_redemption", { p_redemption: vars.id, p_note: vars.note });
+      if (error) throw error;
+      return data as Redemption;
+    },
+    POINT_KEYS,
+  );
+}
+
+/** Admin-only sweep: expired approved earns become expire rows. */
+export function useExpirePoints() {
+  return useAction(
+    async () => {
+      const { data, error } = await supabase.rpc("expire_points");
+      if (error) throw error;
+      return data as number;
+    },
+    POINT_KEYS,
+  );
+}
+

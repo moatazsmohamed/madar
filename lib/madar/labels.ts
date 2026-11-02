@@ -1,4 +1,4 @@
-import type { Priority, ProjectStatus, Role, MemberStatus, TaskStatus } from "./types";
+import type { MemberStatus, PointEntryKind, PointEntryStatus, PointEventKey, PointPeriodKind, PointSource, Priority, ProjectStatus, RedemptionStatus, Role, TaskStatus } from "./types";
 
 export const ROLE_LABELS: Record<Role, string> = {
   developer: "حساب المطور",
@@ -82,6 +82,76 @@ export const PROJECT_STATUS_TONE: Record<ProjectStatus, Tone> = {
 
 export const PROJECT_STATUS_ORDER: ProjectStatus[] = ["planning", "active", "on_hold", "completed", "archived"];
 
+export const POINT_ENTRY_STATUS_LABELS: Record<PointEntryStatus, string> = {
+  pending: "بانتظار الموافقة",
+  approved: "معتمدة",
+  rejected: "مرفوضة",
+  cancelled: "ملغاة",
+};
+
+export const POINT_ENTRY_STATUS_TONE: Record<PointEntryStatus, Tone> = {
+  pending: "warning",
+  approved: "success",
+  rejected: "error",
+  cancelled: "neutral",
+};
+
+export const POINT_KIND_LABELS: Record<PointEntryKind, string> = {
+  earn: "إكساب",
+  adjust: "تسوية",
+  redeem: "استبدال",
+  expire: "انتهاء صلاحية",
+  reverse: "تصحيح",
+};
+
+export const POINT_SOURCE_LABELS: Record<PointSource, string> = {
+  manual: "يدوي",
+  rule: "قاعدة تلقائية",
+  redemption: "استبدال مكافأة",
+  system: "النظام",
+  correction: "تصحيح",
+};
+
+export const POINT_EVENT_LABELS: Record<PointEventKey, string> = {
+  manual: "منح مباشر من مسؤول",
+  task_approved: "اعتماد مهمة",
+  month_closed: "إغلاق الشهر",
+};
+
+export const POINT_EVENT_HINTS: Record<PointEventKey, string> = {
+  manual: "منح أو خصم النقاط من شاشة إدارة النقاط.",
+  task_approved: "يمنح كل مسند إليه نشط عند اعتماد مهمته.",
+  month_closed: "يمنح كل من أنجز مهمة عند إغلاق شهر الشركة.",
+};
+
+export const POINT_PERIOD_LABELS: Record<PointPeriodKind, string> = {
+  day: "كل يوم",
+  month: "كل شهر",
+  none: "بلا فترة",
+};
+
+export const POINT_PERIOD_ORDER: PointPeriodKind[] = ["month", "day", "none"];
+
+export const POINT_EVENT_ORDER: PointEventKey[] = ["task_approved", "month_closed", "manual"];
+
+export const REDEMPTION_STATUS_LABELS: Record<RedemptionStatus, string> = {
+  requested: "بانتظار الموافقة",
+  approved: "معتمد — يستلم",
+  rejected: "مرفوض",
+  fulfilled: "تم التسليم",
+  cancelled: "مُسترجع",
+};
+
+export const REDEMPTION_STATUS_TONE: Record<RedemptionStatus, Tone> = {
+  requested: "warning",
+  approved: "info",
+  rejected: "error",
+  fulfilled: "success",
+  cancelled: "neutral",
+};
+
+export const REDEMPTION_STATUS_ORDER: RedemptionStatus[] = ["requested", "approved", "fulfilled", "rejected", "cancelled"];
+
 export const PALETTE = ["#176B52", "#2F6FA3", "#B7791F", "#8E4B9B", "#C2412D", "#3E7C8C", "#6B7F2A", "#5A5F73"];
 
 export const TIMEZONES: { value: string; label: string }[] = [
@@ -114,4 +184,9 @@ export const ACTIVITY_LABELS: Record<string, string> = {
   unassigned: "ألغى إسناد",
   commented: "علّق",
   file_attached: "أرفق ملفًا",
+  points_earn: "منح نقاطًا",
+  points_adjust: "سجّل تسوية",
+  points_redeem: "استبدل مكافأة",
+  points_expire: "أُسقطت نقاط لانتهائها",
+  points_reverse: "صحّح حركة نقاط",
 };

@@ -3,6 +3,12 @@ export type MemberStatus = "pending" | "active" | "disabled";
 export type TaskStatus = "todo" | "in_progress" | "review" | "done" | "blocked";
 export type Priority = "low" | "medium" | "high" | "urgent";
 export type ProjectStatus = "planning" | "active" | "on_hold" | "completed" | "archived";
+export type PointEntryKind = "earn" | "adjust" | "redeem" | "expire" | "reverse";
+export type PointEntryStatus = "pending" | "approved" | "rejected" | "cancelled";
+export type PointSource = "manual" | "rule" | "redemption" | "system" | "correction";
+export type PointEventKey = "manual" | "task_approved" | "month_closed";
+export type PointPeriodKind = "day" | "month" | "none";
+export type RedemptionStatus = "requested" | "approved" | "rejected" | "fulfilled" | "cancelled";
 
 export interface Company {
   id: string;
@@ -219,6 +225,110 @@ export interface TaskTimeTotal {
   task_id: string;
   minutes: number;
   sessions: number;
+}
+
+export interface PointSettings {
+  id: string;
+  company_id: string;
+  enabled: boolean;
+  unit_label: string;
+  unit_symbol: string;
+  require_approval: boolean;
+  period_kind: PointPeriodKind;
+  per_member_period_cap: number | null;
+  expiry_days: number | null;
+  min_redeem_points: number | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PointRule {
+  id: string;
+  company_id: string;
+  event_key: PointEventKey;
+  name: string;
+  description: string | null;
+  points: number;
+  enabled: boolean;
+  require_approval: boolean | null;
+  max_per_member: number | null;
+  starts_on: string | null;
+  ends_on: string | null;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Reward {
+  id: string;
+  company_id: string;
+  name: string;
+  description: string | null;
+  cost_points: number;
+  stock: number | null;
+  per_member_max: number | null;
+  enabled: boolean;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PointEntry {
+  id: string;
+  company_id: string;
+  member_id: string;
+  points: number;
+  kind: PointEntryKind;
+  status: PointEntryStatus;
+  reason: string;
+  source: PointSource;
+  rule_id: string | null;
+  task_id: string | null;
+  reward_id: string | null;
+  redemption_id: string | null;
+  reverses_entry_id: string | null;
+  actor_id: string | null;
+  decided_at: string | null;
+  reject_note: string | null;
+  expires_at: string | null;
+  dedupe_key: string | null;
+  created_at: string;
+}
+
+export interface Redemption {
+  id: string;
+  company_id: string;
+  member_id: string;
+  reward_id: string;
+  points_spent: number;
+  status: RedemptionStatus;
+  request_id: string;
+  note: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  created_at: string;
+}
+
+/** my_points() — the caller's own standing, computed from the ledger on the server. */
+export interface MyPoints {
+  balance: number;
+  pending: number;
+  available: number;
+  expires_on: string | null;
+}
+
+/** point_balances() — one row per member the caller is allowed to see. */
+export interface PointBalanceRow {
+  member_id: string;
+  full_name: string;
+  department_id: string | null;
+  role: Role;
+  balance: number;
+  pending: number;
+  entries: number;
 }
 
 export type TaskInput = {

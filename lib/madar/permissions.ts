@@ -1,6 +1,6 @@
 // Client-side mirror of the database rules. The database (RLS + triggers) remains the source of
 // truth; these helpers only decide which actions to show.
-import type { Department, Profile, Project, Role, Task } from "./types";
+import type { Department, PointSettings, Profile, Project, Role, Task } from "./types";
 import { todayISO } from "./format";
 
 const DEPT_LEADS: Role[] = ["manager", "supervisor"];
@@ -110,4 +110,37 @@ export function canTrackTime(me: Profile | null | undefined, task: Task) {
   if (!me || me.status !== "active" || me.role === "viewer") return false;
   if (task.status === "done" || isMonthLocked(task)) return false;
   return me.role === "admin" || canManageTask(me, task) || isAssignee(me, task);
+}
+
+/** Mirrors point_live_settings(): every points screen is dead until the company admin turns it on. */
+export const canSeePoints = (me: Profile | null | undefined, settings?: PointSettings | null) =>
+  !!me && me.status === "active" && !isDeveloper(me) && (settings === undefined || !!settings?.enabled);
+
+/** Mirrors save_point_settings / save_point_rule / save_reward. */
+export const canManagePointsSettings = (me: Profile | null | undefined) => isAdmin(me);
+
+/** Mirrors can_manage_points: the admin covers the company, a lead only their own department. */
+export function canManagePoints(me: Profile | null | undefined, target: Pick<Profile, "id" | "status" | "department_id">) {
+  if (!me || me.status !== "active" || me.role === "viewer" || !me.company_id) return false;
+  if (target.status !== "active") return false;
+  if (me.role === "admin") return true;
+  if (!DEPT_LEADS.includes(me.role)) return false;
+  return (!!me.department_id && target.department_id === me.department_id) || !!me.department_supervises_all;
+}
+
+/** Mirrors request_points: a viewer reads, it does not ask. */
+export const canRequestPoints = (me: Profile | null | undefined) =>
+  !!me && me.status === "active" && me.role !== "viewer" && !isDeveloper(me);
+
+/** Mirrors redeem_reward / decide_redemption / fulfil_redemption for a given member. */
+export const canRedeemPoints = (me: Profile | null | undefined) => canRequestPoints(me);
+
+/** Mirrors expire_points, which only runs as the company admin. */
+export const canExpirePoints = (me: Profile | null | undefined) => isAdmin(me);
+
+/** Mirrors point_balances: I always see my own row, a lead sees who they can manage. */
+export function canViewPointsReport(me: Profile | null | undefined, target?: Profile) {
+  if (!me || me.status !== "active") return false;
+  if (isAdmin(me)) return true;
+  return !!target && canManagePoints(me, target);
 }
